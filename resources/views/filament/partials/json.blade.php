@@ -1,0 +1,1 @@
+<pre style="white-space:pre-wrap;overflow-wrap:anywhere">{{ json_encode($data, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) }}</pre>

@@ -1,0 +1,3447 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Easy Gold Feedback Internal API",
+    "version": "1.1.0",
+    "description": "Contract จากโค้ด Feedback Service วันที่ 17 พฤศจิกายน 2026. API server-to-server เท่านั้น; App Backend และ Admin REST ที่เคยเสนอไม่ได้รวมเป็น implemented routes. ทุก UUID/เวลาใน examples เป็นข้อมูลสมมติ ต้องแทนจาก config และเวลาจริง. อ่าน INTEGRATION_TH.md สำหรับ business validation และ retry."
+  },
+  "servers": [
+    {
+      "url": "http://127.0.0.1:8000/internal/v1/feedback",
+      "description": "Local development; เปลี่ยน URL ตาม environment"
+    }
+  ],
+  "security": [
+    {
+      "ServiceBearer": []
+    }
+  ],
+  "tags": [
+    {
+      "name": "Feedback"
+    },
+    {
+      "name": "Cohorts"
+    }
+  ],
+  "paths": {
+    "/config": {
+      "get": {
+        "operationId": "getConfig",
+        "summary": "อ่าน published config ตามช่องทาง",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=config.read. ใช้ published version ล่าสุด; source ที่ version ไม่รองรับได้ 404. ไม่ส่ง source คืน always_on. Cache-Control: private, max-age=60. app_config.channels.auto_prompt ไม่แทน eligibility รายลูกค้า",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "name": "survey_code",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          },
+          {
+            "name": "source",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "auto_prompt",
+                "always_on"
+              ],
+              "default": "always_on"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ConfigResponse"
+                }
+              }
+            },
+            "headers": {
+              "Cache-Control": {
+                "schema": {
+                  "type": "string"
+                },
+                "example": "private, max-age=60"
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/responses": {
+      "post": {
+        "operationId": "submitResponse",
+        "summary": "บันทึกคะแนน เหตุผล และข้อความแบบ atomic",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=response.write. ตรวจ quota/cooldown และเขียนคำตอบ+idempotency receipt ใน MySQL transaction เดียว. Retry เดิมได้ receipt เดิมแม้กฎเปลี่ยน; key เดิม payload ต่างได้ 409. ตัวอย่าง UUID ต้องแทนด้วย ID จริงจาก config/invitation; always_on example สมมติว่า rating ไม่บังคับเหตุผล",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "response_id": "55555555-5555-4555-8555-555555555555",
+                      "client_submission_id": "popup-example-001",
+                      "status": "stored",
+                      "received_at": "2026-11-17T05:00:01Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ResponseReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "response_id": "55555555-5555-4555-8555-555555555555",
+                      "client_submission_id": "popup-example-001",
+                      "status": "stored",
+                      "received_at": "2026-11-17T05:00:01Z"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Submission"
+              },
+              "examples": {
+                "popup": {
+                  "value": {
+                    "client_submission_id": "popup-example-001",
+                    "actor_user_id": "account-example-001",
+                    "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                    "source": "auto_prompt",
+                    "invitation_id": "44444444-4444-4444-8444-444444444444",
+                    "submitted_at": "2026-11-17T05:00:00Z",
+                    "answers": [
+                      {
+                        "question_id": "22222222-2222-4222-8222-222222222222",
+                        "rating_value": 5,
+                        "option_ids": [
+                          "33333333-3333-4333-8333-333333333333"
+                        ],
+                        "text_value": "ບໍລິການດີ"
+                      }
+                    ],
+                    "metadata": {
+                      "app_version": "2.1.3",
+                      "os": "ios"
+                    }
+                  }
+                },
+                "always_on": {
+                  "value": {
+                    "client_submission_id": "feedback-example-001",
+                    "actor_user_id": "account-example-001",
+                    "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                    "source": "always_on",
+                    "submitted_at": "2026-11-17T05:00:00Z",
+                    "answers": [
+                      {
+                        "question_id": "22222222-2222-4222-8222-222222222222",
+                        "rating_value": 4
+                      },
+                      {
+                        "question_id": "77777777-7777-4777-8777-777777777777",
+                        "option_ids": [
+                          "88888888-8888-4888-8888-888888888888"
+                        ]
+                      },
+                      {
+                        "question_id": "66666666-6666-4666-8666-666666666666",
+                        "text_value": "อยากให้เพิ่มคำอธิบายบริการ"
+                      }
+                    ],
+                    "metadata": {
+                      "app_version": "2.1.3",
+                      "os": "ios"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/responses/{id}": {
+      "get": {
+        "operationId": "getResponse",
+        "summary": "อ่านคำตอบของ caller และ actor เดิม",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=response.read. ไม่พบหรือ actor/caller ไม่ตรงได้ 404. เป็นข้อมูลภายใน ไม่ควรส่ง response ทั้งก้อนไป mobile",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "name": "actor_user_id",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "maxLength": 100
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StoredResponse"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/eligibility": {
+      "post": {
+        "operationId": "evaluateEligibility",
+        "summary": "ตรวจสิทธิ์และสร้าง invitation เมื่อผ่านกฎ",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=invitation.write. ทั้งสอง routes เป็น alias ของ operation เดียวและใช้ idempotency scope ร่วมกัน. Backend ต้องยืนยันธุรกรรมสำเร็จก่อน. Retry ตรวจ policy ปัจจุบันอีกครั้ง ไม่รับประกัน eligible เดิม. Invitation ไม่จอง quota",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                },
+                "examples": {
+                  "eligible": {
+                    "value": {
+                      "eligible": true,
+                      "reason": null,
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 0,
+                      "max_responses": 3,
+                      "remaining_responses": 3,
+                      "cooldown_days": 30,
+                      "cooldown_until": null,
+                      "reset_policy": "pending_confirmation",
+                      "invitation_id": "44444444-4444-4444-8444-444444444444",
+                      "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                      "expires_at": "2026-11-18T04:59:00Z"
+                    }
+                  },
+                  "cooldown": {
+                    "value": {
+                      "eligible": false,
+                      "reason": "cooldown_active",
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 1,
+                      "max_responses": 3,
+                      "remaining_responses": 2,
+                      "cooldown_days": 30,
+                      "cooldown_until": "2026-12-17T05:00:01Z",
+                      "reset_policy": "pending_confirmation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                },
+                "examples": {
+                  "eligible": {
+                    "value": {
+                      "eligible": true,
+                      "reason": null,
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 0,
+                      "max_responses": 3,
+                      "remaining_responses": 3,
+                      "cooldown_days": 30,
+                      "cooldown_until": null,
+                      "reset_policy": "pending_confirmation",
+                      "invitation_id": "44444444-4444-4444-8444-444444444444",
+                      "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                      "expires_at": "2026-11-18T04:59:00Z"
+                    }
+                  },
+                  "cooldown": {
+                    "value": {
+                      "eligible": false,
+                      "reason": "cooldown_active",
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 1,
+                      "max_responses": 3,
+                      "remaining_responses": 2,
+                      "cooldown_days": 30,
+                      "cooldown_until": "2026-12-17T05:00:01Z",
+                      "reset_policy": "pending_confirmation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EligibilityRequest"
+              },
+              "examples": {
+                "verified_transaction": {
+                  "value": {
+                    "actor_user_id": "account-example-001",
+                    "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                    "transaction_context": {
+                      "transaction_id": "buy-example-001",
+                      "transaction_type": "BUY_GOLD",
+                      "transaction_occurred_at": "2026-11-17T04:58:00Z",
+                      "verified_at": "2026-11-17T04:59:00Z",
+                      "success_verified": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/invitations": {
+      "post": {
+        "operationId": "createInvitation",
+        "summary": "ตรวจสิทธิ์และสร้าง invitation เมื่อผ่านกฎ",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=invitation.write. ทั้งสอง routes เป็น alias ของ operation เดียวและใช้ idempotency scope ร่วมกัน. Backend ต้องยืนยันธุรกรรมสำเร็จก่อน. Retry ตรวจ policy ปัจจุบันอีกครั้ง ไม่รับประกัน eligible เดิม. Invitation ไม่จอง quota",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                },
+                "examples": {
+                  "eligible": {
+                    "value": {
+                      "eligible": true,
+                      "reason": null,
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 0,
+                      "max_responses": 3,
+                      "remaining_responses": 3,
+                      "cooldown_days": 30,
+                      "cooldown_until": null,
+                      "reset_policy": "pending_confirmation",
+                      "invitation_id": "44444444-4444-4444-8444-444444444444",
+                      "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                      "expires_at": "2026-11-18T04:59:00Z"
+                    }
+                  },
+                  "cooldown": {
+                    "value": {
+                      "eligible": false,
+                      "reason": "cooldown_active",
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 1,
+                      "max_responses": 3,
+                      "remaining_responses": 2,
+                      "cooldown_days": 30,
+                      "cooldown_until": "2026-12-17T05:00:01Z",
+                      "reset_policy": "pending_confirmation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EligibilityResponse"
+                },
+                "examples": {
+                  "eligible": {
+                    "value": {
+                      "eligible": true,
+                      "reason": null,
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 0,
+                      "max_responses": 3,
+                      "remaining_responses": 3,
+                      "cooldown_days": 30,
+                      "cooldown_until": null,
+                      "reset_policy": "pending_confirmation",
+                      "invitation_id": "44444444-4444-4444-8444-444444444444",
+                      "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                      "expires_at": "2026-11-18T04:59:00Z"
+                    }
+                  },
+                  "cooldown": {
+                    "value": {
+                      "eligible": false,
+                      "reason": "cooldown_active",
+                      "transaction_type": "BUY_GOLD",
+                      "successful_response_count": 1,
+                      "max_responses": 3,
+                      "remaining_responses": 2,
+                      "cooldown_days": 30,
+                      "cooldown_until": "2026-12-17T05:00:01Z",
+                      "reset_policy": "pending_confirmation"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/EligibilityRequest"
+              },
+              "examples": {
+                "verified_transaction": {
+                  "value": {
+                    "actor_user_id": "account-example-001",
+                    "survey_version_id": "11111111-1111-4111-8111-111111111111",
+                    "transaction_context": {
+                      "transaction_id": "buy-example-001",
+                      "transaction_type": "BUY_GOLD",
+                      "transaction_occurred_at": "2026-11-17T04:58:00Z",
+                      "verified_at": "2026-11-17T04:59:00Z",
+                      "success_verified": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/prompt-events": {
+      "post": {
+        "operationId": "storePromptEvent",
+        "summary": "บันทึก shown หรือ dismissed โดยไม่เพิ่มโควตา",
+        "tags": [
+          "Feedback"
+        ],
+        "description": "scope=invitation.write. event_id/body เดิมคืน 200 แม้ใช้ key ใหม่; เปลี่ยน payload ของ event เดิมได้ 409. 201 หลัง commit ไม่ใช่ 202 queue",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/AppCaller"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "event_id": "event-example-001",
+                      "status": "stored"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EventReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "event_id": "event-example-001",
+                      "status": "stored"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptEvent"
+              },
+              "examples": {
+                "shown": {
+                  "value": {
+                    "actor_user_id": "account-example-001",
+                    "invitation_id": "44444444-4444-4444-8444-444444444444",
+                    "event_id": "event-example-001",
+                    "event_type": "shown",
+                    "occurred_at": "2026-11-17T04:59:10Z"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cohort-snapshots": {
+      "post": {
+        "operationId": "startSnapshot",
+        "summary": "สร้าง manifest รายชื่อบัญชี",
+        "tags": [
+          "Cohorts"
+        ],
+        "description": "scope=cohort.write. external_id เดิมต้องมี manifest เดิม; ข้อมูลขัดแย้งได้ 409. identity_type รองรับ account เท่านั้น",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CohortCaller"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotReceipt"
+                },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "snapshot_id": "99999999-9999-4999-8999-999999999999",
+                      "status": "incomplete"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotReceipt"
+                },
+                "examples": {
+                  "created": {
+                    "value": {
+                      "snapshot_id": "99999999-9999-4999-8999-999999999999",
+                      "status": "incomplete"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SnapshotManifest"
+              },
+              "examples": {
+                "manifest": {
+                  "value": {
+                    "external_id": "accounts-example-001",
+                    "captured_at": "2026-11-17T04:00:00Z",
+                    "expected_count": 1,
+                    "expected_batches": 1,
+                    "identity_type": "account"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cohort-snapshots/{id}/members": {
+      "post": {
+        "operationId": "appendSnapshotMembers",
+        "summary": "เพิ่มสมาชิกครั้งละ 1–500 บัญชี",
+        "tags": [
+          "Cohorts"
+        ],
+        "description": "scope=cohort.write. batch_id เดิม payload เดิมได้ 200; บัญชีซ้ำข้าม batch ได้ 409; เกิน manifest ได้ 422. Snapshot complete แล้วแก้ไม่ได้",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CohortCaller"
+          },
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "snapshot_id": "99999999-9999-4999-8999-999999999999",
+                      "batch_id": "batch-example-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "สร้างและ commit สำเร็จ",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BatchReceipt"
+                },
+                "examples": {
+                  "stored": {
+                    "value": {
+                      "snapshot_id": "99999999-9999-4999-8999-999999999999",
+                      "batch_id": "batch-example-001"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MembersBatch"
+              },
+              "examples": {
+                "batch": {
+                  "value": {
+                    "batch_id": "batch-example-001",
+                    "members": [
+                      {
+                        "actor_user_id": "account-example-001",
+                        "one_id": null,
+                        "display_name": "บัญชีตัวอย่าง",
+                        "phone": null,
+                        "identity_complete": false
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/cohort-snapshots/{id}/complete": {
+      "post": {
+        "operationId": "completeSnapshot",
+        "summary": "ยืนยัน snapshot เมื่อสมาชิกและ batches ครบ",
+        "tags": [
+          "Cohorts"
+        ],
+        "description": "scope=cohort.write. ไม่ต้องส่ง body (ส่ง {} ได้). จำนวนสมาชิกและ batches ต้องตรง manifest; ไม่ครบได้ 422. Snapshot ว่าง expected_count=0/expected_batches=0 complete ได้",
+        "parameters": [
+          {
+            "$ref": "#/components/parameters/CohortCaller"
+          },
+          {
+            "$ref": "#/components/parameters/Id"
+          },
+          {
+            "$ref": "#/components/parameters/IdempotencyKey"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "สำเร็จ / replay; eligibility อาจเป็น eligible=false",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotReceipt"
+                },
+                "examples": {
+                  "complete": {
+                    "value": {
+                      "snapshot_id": "99999999-9999-4999-8999-999999999999",
+                      "status": "complete"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "ไม่มี service credential ที่ถูกต้อง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "scope ไม่ตรง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "ไม่พบ resource ที่ caller/actor เข้าถึงได้",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "payload หรือสถานะข้อมูลขัดแย้ง",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "request เกิน 2 MiB",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "ข้อมูลหรือเงื่อนไขธุรกิจไม่ผ่าน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "rate limit",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "ข้อผิดพลาดภายใน",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "service unavailable",
+            "headers": {
+              "X-Request-ID": {
+                "schema": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "ServiceBearer": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Service token ตาม X-Service-ID; ห้ามใช้ customer/staff token แทน"
+      }
+    },
+    "parameters": {
+      "AppCaller": {
+        "name": "X-Service-ID",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "app-backend"
+          ]
+        }
+      },
+      "CohortCaller": {
+        "name": "X-Service-ID",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "user-adapter"
+          ]
+        }
+      },
+      "IdempotencyKey": {
+        "name": "Idempotency-Key",
+        "in": "header",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9._:-]{1,128}$"
+        },
+        "description": "คง key และ payload เดิมเมื่อ retry; key ใหม่สำหรับ operation/คำตอบใหม่"
+      },
+      "Id": {
+        "name": "id",
+        "in": "path",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "format": "uuid"
+        }
+      }
+    },
+    "schemas": {
+      "LocalizedText": {
+        "type": "object",
+        "properties": {
+          "en": {
+            "type": "string"
+          },
+          "lo": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "en",
+          "lo"
+        ]
+      },
+      "Option": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "question_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "label": {
+            "$ref": "#/components/schemas/LocalizedText"
+          },
+          "rating_value": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "position": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "id",
+          "question_id",
+          "code",
+          "label",
+          "rating_value",
+          "position"
+        ]
+      },
+      "Comment": {
+        "type": "object",
+        "properties": {
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "auto_prompt"
+              ]
+            }
+          },
+          "field": {
+            "type": "string",
+            "enum": [
+              "text_value"
+            ]
+          },
+          "required": {
+            "const": false,
+            "type": "boolean"
+          },
+          "max_length": {
+            "type": "integer"
+          },
+          "label": {
+            "$ref": "#/components/schemas/LocalizedText"
+          }
+        },
+        "required": [
+          "channels",
+          "field",
+          "required",
+          "max_length",
+          "label"
+        ]
+      },
+      "Question": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "code": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "rating",
+              "choice",
+              "text"
+            ]
+          },
+          "label": {
+            "$ref": "#/components/schemas/LocalizedText"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "required": {
+            "type": "boolean"
+          },
+          "max_length": {
+            "type": "integer"
+          },
+          "max_choices": {
+            "type": "integer"
+          },
+          "position": {
+            "type": "integer"
+          },
+          "channels": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "auto_prompt",
+                "always_on"
+              ]
+            }
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            }
+          },
+          "rating_reasons_enabled": {
+            "type": "boolean"
+          },
+          "rating_reasons_required": {
+            "type": "boolean"
+          },
+          "rating_reasons": {
+            "oneOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "5": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Option"
+                    }
+                  },
+                  "4": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Option"
+                    }
+                  },
+                  "3": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Option"
+                    }
+                  },
+                  "2": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Option"
+                    }
+                  },
+                  "1": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/Option"
+                    }
+                  }
+                },
+                "required": [
+                  "5",
+                  "4",
+                  "3",
+                  "2",
+                  "1"
+                ]
+              },
+              {
+                "type": "array",
+                "items": {},
+                "maxItems": 0
+              }
+            ]
+          },
+          "comment": {
+            "$ref": "#/components/schemas/Comment"
+          }
+        },
+        "required": [
+          "id",
+          "code",
+          "type",
+          "label",
+          "enabled",
+          "required",
+          "channels",
+          "max_length",
+          "max_choices",
+          "options",
+          "rating_reasons_enabled",
+          "rating_reasons_required",
+          "rating_reasons"
+        ],
+        "description": "comment มีเฉพาะ rating และใช้แสดงใน auto_prompt เท่านั้น; rating_reasons=[] เมื่อไม่เปิดเหตุผล; IDs ผูกกับ version"
+      },
+      "AppConfig": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto_prompt",
+              "always_on"
+            ]
+          },
+          "survey_code": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "survey_version": {
+            "type": "integer"
+          },
+          "published_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+                "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "rating_levels": {
+            "type": "array",
+            "const": [
+              5,
+              4,
+              3,
+              2,
+              1
+            ],
+            "items": {
+              "type": "integer"
+            }
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "channels": {
+            "type": "object",
+            "properties": {
+              "auto_prompt": {
+                "type": "boolean"
+              },
+              "always_on": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "auto_prompt",
+              "always_on"
+            ]
+          },
+          "content": {
+            "type": "object",
+            "properties": {
+              "title": {
+                "$ref": "#/components/schemas/LocalizedText"
+              },
+              "intro": {
+                "$ref": "#/components/schemas/LocalizedText"
+              },
+              "submit": {
+                "$ref": "#/components/schemas/LocalizedText"
+              },
+              "cancel": {
+                "$ref": "#/components/schemas/LocalizedText"
+              },
+              "thank_you": {
+                "$ref": "#/components/schemas/LocalizedText"
+              }
+            },
+            "required": [
+              "title",
+              "intro",
+              "submit",
+              "cancel",
+              "thank_you"
+            ]
+          },
+          "questions": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Question"
+            }
+          },
+          "customer_service": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "icon": {
+                "type": "string",
+                "enum": [
+                  "star",
+                  "chat",
+                  "headset"
+                ]
+              },
+              "name": {
+                "$ref": "#/components/schemas/LocalizedText"
+              },
+              "description": {
+                "$ref": "#/components/schemas/LocalizedText"
+              }
+            },
+            "required": [
+              "enabled",
+              "icon",
+              "name",
+              "description"
+            ]
+          },
+          "popup_schedule": {
+            "type": "object",
+            "properties": {
+              "starts_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+                    "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "ends_at": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time",
+                    "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+                    "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "starts_at",
+              "ends_at"
+            ]
+          }
+        },
+        "required": [
+          "source",
+          "survey_code",
+          "survey_version",
+          "published_at",
+          "rating_levels",
+          "survey_version_id",
+          "channels",
+          "content",
+          "questions",
+          "customer_service",
+          "popup_schedule"
+        ]
+      },
+      "ConfigResponse": {
+        "type": "object",
+        "properties": {
+          "survey": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "version": {
+                "type": "integer"
+              },
+              "channels": {
+                "type": "array",
+                "items": {
+                  "type": "string",
+                  "enum": [
+                    "auto_prompt",
+                    "always_on"
+                  ]
+                }
+              },
+              "questions": {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/Question"
+                }
+              }
+            },
+            "required": [
+              "id",
+              "version",
+              "channels",
+              "questions"
+            ],
+            "additionalProperties": true
+          },
+          "rules": {
+            "type": "object",
+            "additionalProperties": true,
+            "description": "กฎภายในสำหรับ backend; ไม่ส่งทั้ง object ไป mobile"
+          },
+          "app_config": {
+            "$ref": "#/components/schemas/AppConfig"
+          }
+        },
+        "required": [
+          "survey",
+          "rules",
+          "app_config"
+        ]
+      },
+      "Answer": {
+        "type": "object",
+        "properties": {
+          "question_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating_value": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "text_value": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 10000
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "option_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "maxItems": 50,
+            "uniqueItems": true
+          }
+        },
+        "required": [
+          "question_id"
+        ],
+        "additionalProperties": false,
+        "description": "ชนิดคำถามเป็นตัวกำหนด field ที่อนุญาต: rating ต้องมีคะแนน integer; rating auto_prompt รับ text_value optional; always_on rating ไม่รับ text_value; choice ต้องมี option_ids อย่างน้อย 1; text ต้องมีข้อความไม่ว่าง. Server ตรวจ required/max_length/max_choices/option ownership/คะแนนจาก published version"
+      },
+      "Submission": {
+        "type": "object",
+        "properties": {
+          "client_submission_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "actor_user_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "one_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto_prompt",
+              "always_on"
+            ]
+          },
+          "invitation_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "uuid"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Answer"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "app_version": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "maxLength": 40
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "os": {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "android",
+                      "ios",
+                      "other"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [],
+            "additionalProperties": false
+          }
+        },
+        "required": [
+          "client_submission_id",
+          "actor_user_id",
+          "survey_version_id",
+          "source",
+          "submitted_at",
+          "answers"
+        ],
+        "description": "auto_prompt ต้องมี invitation ของ caller/actor/version นี้; always_on ต้องไม่มี invitation. ห้าม transaction_context; question_id ต้องไม่ซ้ำ. ไม่ส่ง text_value ใน rating ของ always_on"
+      },
+      "ResponseReceipt": {
+        "type": "object",
+        "properties": {
+          "response_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "client_submission_id": {
+            "type": "string",
+            "maxLength": 100
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored"
+            ]
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          }
+        },
+        "required": [
+          "response_id",
+          "client_submission_id",
+          "status",
+          "received_at"
+        ]
+      },
+      "StoredAnswer": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "feedback_response_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "question_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "rating_value": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "text_value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "options": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Option"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "feedback_response_id",
+          "question_id",
+          "rating_value",
+          "text_value",
+          "options"
+        ],
+        "additionalProperties": true
+      },
+      "StoredResponse": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "caller": {
+            "type": "string"
+          },
+          "actor_user_id": {
+            "type": "string"
+          },
+          "client_submission_id": {
+            "type": "string"
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "auto_prompt",
+              "always_on"
+            ]
+          },
+          "submitted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "received_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "answers": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/StoredAnswer"
+            }
+          }
+        },
+        "required": [
+          "id",
+          "caller",
+          "actor_user_id",
+          "client_submission_id",
+          "survey_version_id",
+          "source",
+          "submitted_at",
+          "received_at",
+          "answers"
+        ],
+        "additionalProperties": true,
+        "description": "ผลอ่านภายในแบบ Eloquent อาจมี payload_hash, context IDs และข้อมูลภายในอื่น; backend ต้องเลือก field ก่อนส่งต่อ app. เวลาอาจมี fractional seconds"
+      },
+      "TransactionContext": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "transaction_type": {
+            "type": "string",
+            "maxLength": 50,
+            "minLength": 1,
+            "examples": [
+              "BUY_GOLD",
+              "SALE_GOLD"
+            ]
+          },
+          "transaction_occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          },
+          "verified_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          },
+          "success_verified": {
+            "type": "boolean",
+            "const": true,
+            "description": "ส่ง boolean true หลัง backend ตรวจ transaction สำเร็จและ actor ownership แล้วเท่านั้น; verified_at >= transaction_occurred_at"
+          }
+        },
+        "required": [
+          "transaction_id",
+          "transaction_type",
+          "transaction_occurred_at",
+          "verified_at",
+          "success_verified"
+        ],
+        "additionalProperties": false
+      },
+      "EligibilityRequest": {
+        "type": "object",
+        "properties": {
+          "actor_user_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "transaction_context": {
+            "$ref": "#/components/schemas/TransactionContext"
+          }
+        },
+        "required": [
+          "actor_user_id",
+          "survey_version_id",
+          "transaction_context"
+        ]
+      },
+      "EligibilityResponse": {
+        "type": "object",
+        "properties": {
+          "eligible": {
+            "type": "boolean"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "trigger_disabled",
+                  "outside_schedule",
+                  "response_limit_reached",
+                  "cooldown_active",
+                  "invitation_answered",
+                  "invitation_expired",
+                  "evaluation_retry_requires_new_key"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "transaction_type": {
+            "type": "string"
+          },
+          "successful_response_count": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "max_responses": {
+            "type": "integer",
+            "const": 3
+          },
+          "remaining_responses": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 3
+          },
+          "cooldown_days": {
+            "type": "integer",
+            "const": 30
+          },
+          "cooldown_until": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+                "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "reset_policy": {
+            "type": "string",
+            "enum": [
+              "pending_confirmation"
+            ]
+          },
+          "invitation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "survey_version_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          }
+        },
+        "required": [
+          "eligible",
+          "reason",
+          "transaction_type",
+          "successful_response_count",
+          "max_responses",
+          "remaining_responses",
+          "cooldown_days",
+          "cooldown_until",
+          "reset_policy"
+        ]
+      },
+      "PromptEvent": {
+        "type": "object",
+        "properties": {
+          "actor_user_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "invitation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "event_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "shown",
+              "dismissed"
+            ]
+          },
+          "occurred_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          }
+        },
+        "required": [
+          "actor_user_id",
+          "invitation_id",
+          "event_id",
+          "event_type",
+          "occurred_at"
+        ],
+        "description": "occurred_at ต้องอยู่ในช่วงอายุ invitation; ไม่เพิ่มตัวนับคำตอบหรือ cooldown"
+      },
+      "EventReceipt": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "stored"
+            ]
+          }
+        },
+        "required": [
+          "event_id",
+          "status"
+        ]
+      },
+      "SnapshotManifest": {
+        "type": "object",
+        "properties": {
+          "external_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "captured_at": {
+            "type": "string",
+            "format": "date-time",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$",
+            "description": "UTC วินาทีเต็ม; timestamp ใน request ต้องไม่อยู่ในอนาคต"
+          },
+          "expected_count": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 10000000
+          },
+          "expected_batches": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100000
+          },
+          "identity_type": {
+            "type": "string",
+            "enum": [
+              "account"
+            ]
+          }
+        },
+        "required": [
+          "external_id",
+          "captured_at",
+          "expected_count",
+          "expected_batches",
+          "identity_type"
+        ]
+      },
+      "SnapshotReceipt": {
+        "type": "object",
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "incomplete",
+              "complete"
+            ]
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "status"
+        ]
+      },
+      "Member": {
+        "type": "object",
+        "properties": {
+          "actor_user_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "one_id": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 100
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 200
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "phone": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 40
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "identity_complete": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "actor_user_id",
+          "identity_complete"
+        ],
+        "additionalProperties": false
+      },
+      "MembersBatch": {
+        "type": "object",
+        "properties": {
+          "batch_id": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1
+          },
+          "members": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Member"
+            },
+            "minItems": 1,
+            "maxItems": 500
+          }
+        },
+        "required": [
+          "batch_id",
+          "members"
+        ],
+        "description": "actor_user_id ต้องไม่ซ้ำใน batch และข้าม batches ของ snapshot เดียวกัน"
+      },
+      "BatchReceipt": {
+        "type": "object",
+        "properties": {
+          "snapshot_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "batch_id": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "snapshot_id",
+          "batch_id"
+        ]
+      },
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": {
+            "type": "object",
+            "properties": {
+              "code": {
+                "type": "string",
+                "enum": [
+                  "UNAUTHENTICATED",
+                  "FORBIDDEN",
+                  "NOT_FOUND",
+                  "CONFLICT",
+                  "PAYLOAD_TOO_LARGE",
+                  "VALIDATION_FAILED",
+                  "RATE_LIMITED",
+                  "UNAVAILABLE",
+                  "INTERNAL_ERROR"
+                ]
+              },
+              "message": {
+                "type": "string"
+              },
+              "request_id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "fields": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              }
+            },
+            "required": [
+              "code",
+              "message",
+              "request_id"
+            ]
+          }
+        },
+        "required": [
+          "error"
+        ]
+      }
+    }
+  }
+}

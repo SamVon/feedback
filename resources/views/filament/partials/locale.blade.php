@@ -1,0 +1,1 @@
+<div class="eg-locale"><a href="{{ route('staff.locale','lo') }}">ລາວ</a><span>·</span><a href="{{ route('staff.locale','en') }}">EN</a></div>

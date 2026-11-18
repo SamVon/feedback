@@ -1,0 +1,16 @@
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+Lao:wght@100..900&display=swap');
+
+@import '../../../../vendor/filament/filament/resources/css/theme.css';
+
+@source '../../../../app/Filament/**/*';
+@source '../../../../resources/views/filament/**/*';
+
+@theme {
+    --font-sans: 'Noto Sans Lao', ui-sans-serif, system-ui, sans-serif;
+}
+
+/* Apply Lao font throughout the Filament panel */
+.fi-body {
+    font-family: 'Noto Sans Lao', sans-serif !important;
+}
