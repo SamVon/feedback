@@ -32,3 +32,6 @@ Thumbs.db
 /.local-feedback-token
 
 /.local-feedback-cohort-token
+
+# Temporary PDF renders and extracted assets
+/tmp/pdfs/
