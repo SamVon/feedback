@@ -13,20 +13,20 @@ use Illuminate\Support\Facades\Validator;
 
 final class Invitations
 {
-    public function evaluate(string $caller, string $key, array $data): array
+    public function evaluate(string $caller, string $key, array $data, bool $clientReported = false): array
     {
         $data = Validator::make($data, [
             'actor_user_id' => 'required|string|max:100', 'survey_version_id' => 'required|uuid',
             'transaction_context' => 'required|array:transaction_id,transaction_type,transaction_occurred_at,verified_at,success_verified',
             'transaction_context.transaction_id' => 'required|string|max:100', 'transaction_context.transaction_type' => 'required|string|max:50',
             'transaction_context.transaction_occurred_at' => 'required|date_format:Y-m-d\TH:i:s\Z|before_or_equal:now',
-            'transaction_context.verified_at' => 'required|date_format:Y-m-d\TH:i:s\Z|before_or_equal:now|after_or_equal:transaction_context.transaction_occurred_at',
-            'transaction_context.success_verified' => 'required|accepted',
+            'transaction_context.verified_at' => $clientReported ? 'prohibited' : 'required|date_format:Y-m-d\TH:i:s\Z|before_or_equal:now|after_or_equal:transaction_context.transaction_occurred_at',
+            'transaction_context.success_verified' => $clientReported ? 'prohibited' : 'required|accepted',
         ])->validate();
 
-        return DB::transaction(function () use ($caller, $key, $data): array {
+        return DB::transaction(function () use ($caller, $key, $data, $clientReported): array {
             Idempotency::lockActor($data['actor_user_id']);
-            $result = app(Idempotency::class)->run($caller, 'invitations.create', $key, $data, function () use ($caller, $data): array {
+            $result = app(Idempotency::class)->run($caller, 'invitations.create', $key, $data, function () use ($caller, $data, $clientReported): array {
                 Idempotency::lockActor('__transaction:'.hash('sha256', $caller.':'.$data['transaction_context']['transaction_id']));
                 $version = SurveyVersion::where('status', 'published')->findOrFail($data['survey_version_id']);
                 abort_unless(ChannelPolicy::surveySupports($version, 'auto_prompt'), 422, 'Survey not available for auto prompt.');
@@ -34,6 +34,7 @@ final class Invitations
                 $rule = RuleVersion::where('status', 'published')->orderByDesc('version')->firstOrFail();
                 $contextData = $data['transaction_context'];
                 unset($contextData['success_verified']);
+                $contextData['verification_source'] = $clientReported ? 'client_reported' : 'service_verified';
                 $context = TransactionContext::where('caller', $caller)->where('transaction_id', $contextData['transaction_id'])->first();
                 if ($context) {
                     abort_unless($context->actor_user_id === $data['actor_user_id'] && $context->transaction_type === $contextData['transaction_type'] && $context->transaction_occurred_at->equalTo($contextData['transaction_occurred_at']), 409, 'Transaction context conflict.');

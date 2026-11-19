@@ -3,6 +3,7 @@
 return [
     'timezone' => 'Asia/Vientiane',
     'staff_auth' => env('FEEDBACK_STAFF_AUTH', 'disabled'),
+    'customer_jwt_secret' => env('FEEDBACK_CUSTOMER_JWT_SECRET'),
     'local_admin' => [
         'email' => env('FEEDBACK_LOCAL_ADMIN_EMAIL'),
         'password' => env('FEEDBACK_LOCAL_ADMIN_PASSWORD'),
