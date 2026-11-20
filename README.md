@@ -2,6 +2,8 @@
 
 A Laravel service providing an internal Feedback API and Filament staff panel, separate from the existing Easy Gold backend. The data on this machine is **DEMO data only**. The service is not connected to the live system and has not been deployed.
 
+For the customer-facing API used directly by the mobile app, see the [App Feedback API guide (Thai)](docs/APP_FEEDBACK_API_TH.md).
+
 ## Getting started
 
 The runtime last verified on November 17, 2026 was **PHP 8.5.10, Laravel 13.42.0, Filament 5.11.2, and Livewire 4.4.8** (an earlier setup was verified with PHP 8.4.25). Resolved dependency versions are recorded in `composer.lock`. The project uses **MySQL for both the web application and tests**. On this machine, MySQL 9.7.2 from DBngin runs at `127.0.0.1:3303` as configured in `.env`. The setup uses InnoDB, UTF-8 (`utf8mb4_0900_bin`), UTC, and the `READ COMMITTED` isolation level.
