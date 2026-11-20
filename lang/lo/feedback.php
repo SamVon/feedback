@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'dashboard_filters' => 'ແບບສຳຫຼວດ ແລະ ຕົວກອງເພີ່ມເຕີມ',
+    'csat_score' => 'ຄວາມພໍໃຈ (CSAT Score)',
+    'dashboard_accounts_hint' => 'ຈຳນວນຕາມຕົວກອງທີ່ເລືອກ. ໜຶ່ງບັນຊີອາດສົ່ງໄດ້ຫຼາຍຄັ້ງ.',
     'rating_options_settings' => 'ຕັ້ງຄ່າຄຳຖາມ ແລະ ຈຳນວນທີ່ເລືອກໄດ້',
     'back' => 'ກັບຄືນ',
     'rating_comment_limit' => 'ຄຳແນະນຳເພີ່ມເຕີມໃນ Pop-up · ຈຳນວນຕົວອັກສອນສູງສຸດ',
