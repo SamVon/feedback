@@ -1,6 +1,9 @@
 <?php
 
 return [
+    'dashboard_filters' => 'Survey & additional filters',
+    'csat_score' => 'Customer satisfaction (CSAT Score)',
+    'dashboard_accounts_hint' => 'Counts use the selected filters. Unique accounts may submit more than once.',
     'rating_options_settings' => 'Question settings and selection limits',
     'back' => 'Back',
     'rating_comment_limit' => 'Pop-up additional comments · maximum characters',

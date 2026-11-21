@@ -4,13 +4,18 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\FeedbackCenter;
+use App\Filament\Resources\ApprovalResource;
+use App\Filament\Resources\AuditResource;
+use App\Filament\Resources\CustomerServiceResource;
 use App\Http\Middleware\StaffLocale;
 use Filament\Enums\ThemeMode;
 use Filament\Http\Middleware\Authenticate;
 use Filament\Http\Middleware\AuthenticateSession;
 use Filament\Http\Middleware\DisableBladeIconComponents;
 use Filament\Http\Middleware\DispatchServingFilamentEvent;
+use Filament\Navigation\NavigationBuilder;
 use Filament\Navigation\NavigationGroup;
+use Filament\Navigation\NavigationItem;
 use Filament\Panel;
 use Filament\PanelProvider;
 use Filament\Support\Colors\Color;
@@ -21,6 +26,8 @@ use Illuminate\Foundation\Http\Middleware\PreventRequestForgery;
 use Illuminate\Routing\Middleware\SubstituteBindings;
 use Illuminate\Session\Middleware\StartSession;
 use Illuminate\View\Middleware\ShareErrorsFromSession;
+
+use function Filament\Support\original_request;
 
 class AdminPanelProvider extends PanelProvider
 {
@@ -37,11 +44,26 @@ class AdminPanelProvider extends PanelProvider
             ->maxContentWidth(Width::Full)
             ->homeUrl(fn () => FeedbackCenter::getUrl())
             ->userMenu(false)
-            ->navigationGroups([
-                NavigationGroup::make()->label(fn () => __('feedback.nav_overview'))->collapsible(false),
-                NavigationGroup::make()->label(fn () => __('feedback.nav_customer_service'))->collapsible(false),
-                NavigationGroup::make()->label(fn () => __('feedback.nav_administration'))->collapsible(false),
-            ])
+            ->navigation(fn (NavigationBuilder $builder): NavigationBuilder => $builder
+                ->items([
+                    ...(Dashboard::canAccess() ? Dashboard::getNavigationItems() : []),
+                    ...array_map(
+                        fn (NavigationItem $item): NavigationItem => $item->activeWhen(fn (): bool => ! original_request()->routeIs(
+                            Dashboard::getRouteName(),
+                            ApprovalResource::getRouteBaseName().'.*',
+                            AuditResource::getRouteBaseName().'.*',
+                            CustomerServiceResource::getRouteBaseName().'.*',
+                        )),
+                        FeedbackCenter::getNavigationItems(),
+                    ),
+                ])
+                ->groups([
+                    NavigationGroup::make()->label(fn () => __('feedback.nav_administration'))->collapsible(false)->items([
+                        ...(ApprovalResource::canViewAny() ? ApprovalResource::getNavigationItems() : []),
+                        ...(AuditResource::canViewAny() ? AuditResource::getNavigationItems() : []),
+                        ...(CustomerServiceResource::canViewAny() ? CustomerServiceResource::getNavigationItems() : []),
+                    ]),
+                ]))
             ->brandName('Easy Gold · Feedback')
             ->brandLogo(fn () => view('filament.partials.brand'))
             ->brandLogoHeight('8rem')
