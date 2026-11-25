@@ -14,6 +14,8 @@ class SubmitFeedbackRequest extends FormRequest
     public function rules(): array
     {
         return [
+            'name' => 'prohibited',
+            'phone' => 'prohibited',
             'client_submission_id' => 'required|string|max:100', 'actor_user_id' => 'required|string|max:100', 'one_id' => 'nullable|string|max:100',
             'survey_version_id' => 'required|uuid', 'source' => 'required|in:auto_prompt,always_on', 'invitation_id' => 'nullable|uuid',
             'submitted_at' => 'required|date_format:Y-m-d\TH:i:s\Z|before_or_equal:now',

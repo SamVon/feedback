@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Application\Changes;
 use App\Application\Idempotency;
+use App\Application\PopupPolicy;
 use App\Filament\Resources\Pages\ListRules;
 use App\Models\FeedbackAnswer;
 use App\Models\RuleVersion;
@@ -73,6 +74,32 @@ class PopupPolicyTest extends TestCase
         return ['actor_user_id' => 'actor-1', 'client_submission_id' => $submission, 'survey_version_id' => $this->survey->id,
             'source' => 'auto_prompt', 'invitation_id' => $invitation, 'submitted_at' => now()->format('Y-m-d\TH:i:s\Z'),
             'answers' => [['question_id' => $this->survey->questions()->first()->id, 'rating_value' => 5]]];
+    }
+
+    public function test_unlimited_test_switch_preserves_disabled_triggers_schedules_and_production_limits(): void
+    {
+        $this->prepare();
+        config(['feedback.test_unlimited_popup' => true]);
+        $invitation = $this->eligibility('BUY_GOLD', 'test-buy')->assertCreated()->json('invitation_id');
+        $this->apiPost('responses', $this->response($invitation), 'test-buy-answer')->assertCreated();
+        $rules = $this->rules();
+        $policy = app(PopupPolicy::class);
+        $rules['transaction_rules'][0]['enabled'] = false;
+        $this->assertSame('trigger_disabled', $policy->state('actor-1', 'BUY_GOLD', $rules)['reason']);
+        $rules = $this->rules();
+        $rules['channels']['auto_prompt'] = false;
+        $this->assertSame('trigger_disabled', $policy->state('actor-1', 'BUY_GOLD', $rules)['reason']);
+        $rules = $this->rules();
+        $rules['popup_schedule'] = ['starts_at' => now()->addDay()->utc()->format('Y-m-d\TH:i:s\Z'), 'ends_at' => null];
+        $this->assertSame('outside_schedule', $policy->state('actor-1', 'BUY_GOLD', $rules)['reason']);
+
+        $this->app->instance('env', 'production');
+        $state = $policy->state('actor-1', 'BUY_GOLD', $this->rules());
+        $this->assertFalse($state['eligible']);
+        $this->assertTrue($state['limits_enforced']);
+        $this->assertSame('cooldown_active', $state['reason']);
+        $this->assertSame(3, $state['max_responses']);
+        $this->assertSame(30, $state['cooldown_days']);
     }
 
     public function test_stored_buy_response_starts_30_days_only_for_that_account_and_type(): void
@@ -214,8 +241,10 @@ class PopupPolicyTest extends TestCase
         $version = RuleVersion::firstOrFail();
         $rules = $this->rules();
         $rules['transaction_rules'][1]['enabled'] = false;
-        Livewire::test(ListRules::class)->callTableAction('newVersion', $version, data: $rules)->assertHasNoActionErrors();
+        Livewire::test(ListRules::class)->callTableAction('newVersion', $version, data: ['enabled_transaction_types' => ['BUY_GOLD']])
+            ->assertHasNoTableActionErrors();
         $draft = RuleVersion::where('status', 'draft')->firstOrFail();
+        $this->assertTrue($version->fresh()->rules['transaction_rules'][1]['enabled']);
         foreach (['submit', 'approve', 'publish'] as $action) {
             app(Changes::class)->transition($this->staff, 'rules', $draft->id, 1, $action);
         }

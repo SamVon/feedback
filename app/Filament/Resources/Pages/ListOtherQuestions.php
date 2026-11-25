@@ -8,4 +8,10 @@ use Filament\Resources\Pages\ListRecords;
 class ListOtherQuestions extends ListRecords
 {
     protected static string $resource = OtherQuestionResource::class;
+
+    public function applyTableFilters(): void
+    {
+        $this->getTableFiltersForm()->getState();
+        parent::applyTableFilters();
+    }
 }

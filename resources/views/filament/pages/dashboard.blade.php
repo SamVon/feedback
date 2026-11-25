@@ -13,23 +13,18 @@
         $recent = $this->recentFeedback();
     @endphp
     <div class="eg-dashboard">
-        <nav class="eg-dashboard-tabs" aria-label="{{ __('feedback.dashboard') }}">
-            <a href="{{ \App\Filament\Pages\Dashboard::getUrl() }}" aria-current="page">{{ __('feedback.dashboard') }}</a>
-            @if(\App\Filament\Pages\Customers::canAccess())
-                <a href="{{ \App\Filament\Pages\Customers::getUrl() }}">{{ __('feedback.customers') }}</a>
-            @endif
-            @if(\App\Filament\Resources\FeedbackResource::canViewAny())
-                <a href="{{ \App\Filament\Resources\FeedbackResource::getUrl() }}">{{ __('feedback.feedback') }}</a>
-            @endif
-        </nav>
+        @include('filament.partials.feedback-tabs', ['active' => 'dashboard'])
         <section class="eg-dashboard-overview">
             {{ $this->filtersForm }}
             <div class="eg-dashboard-summary">
                 <div class="eg-dashboard-stat-stack">
                     <article class="eg-dashboard-card eg-dashboard-stat">
-                        <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.average') }} <small>(Average)</small></h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-s-star" /></span></div>
+                        <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.average') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-s-star" /></span></div>
                         <p class="eg-dashboard-number">{{ $summary['average'] === null ? __('feedback.no_data') : number_format($summary['average'], 2).' / 5.0' }}</p>
                         <p class="eg-dashboard-muted">{{ number_format($summary['rating_count']) }} {{ __('feedback.ratings') }}</p>
+                        @isset($summary['rating_question_label'])
+                            <p class="eg-dashboard-muted">{{ $summary['rating_question_survey'] }} · {{ $summary['rating_question_label'] }}</p>
+                        @endisset
                     </article>
                     <article class="eg-dashboard-card eg-dashboard-stat">
                         <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.csat_score') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-o-chart-bar" /></span></div>
@@ -66,13 +61,14 @@
                 @if(! $summary['rating_count'])<p class="eg-dashboard-muted">{{ __('feedback.question_hint') }}</p>@endif
             </section>
             <div class="eg-dashboard-chart">
-                @livewire(\App\Filament\Widgets\Trend::class, ['pageFilters' => $this->filters], key('dashboard-trend'))
+                @livewire(\App\Filament\Widgets\Trend::class, ['pageFilters' => $this->dataFilters()], key('dashboard-trend'))
             </div>
             <section class="eg-dashboard-card">
                 <h2>{{ __('feedback.choices') }}</h2>
+                @isset($choices['question'])<p class="eg-dashboard-muted">{{ $choices['question'] }}</p>@endisset
                 <p class="eg-dashboard-muted">{{ __('feedback.choice_denominator_hint') }}</p>
                 <div class="eg-dashboard-choice-list">
-                    @forelse($choices as $choice)
+                    @forelse(($choices['options'] ?? []) as $choice)
                         <div><div class="eg-dashboard-choice-label"><span>{{ $choice['label'] }}</span><strong>{{ $choice['percent'] === null ? '—' : number_format($choice['percent'], 1).'%' }} ({{ number_format($choice['count']) }})</strong></div>
                         <div class="eg-dashboard-progress" role="progressbar" aria-label="{{ $choice['label'] }}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{{ $choice['percent'] ?? 0 }}"><span style="width: {{ $choice['percent'] ?? 0 }}%"></span></div></div>
                     @empty<p class="eg-dashboard-muted">{{ __('feedback.no_data') }}</p>@endforelse
@@ -91,7 +87,7 @@
                                     @endforeach
                                     <time datetime="{{ $response->received_at->toIso8601String() }}">{{ $response->received_at->setTimezone('Asia/Vientiane')->format('d/m/Y H:i') }}</time>
                                 </div>
-                                @php($ratingAnswer = $response->answers->firstWhere('question_id', $this->filters['question_id'] ?? null))
+                                @php($ratingAnswer = isset($this->filters['question_id']) ? $response->answers->firstWhere('question_id', $this->filters['question_id']) : $response->answers->firstWhere('rating_value', '!=', null))
                                 @if($ratingAnswer?->rating_value)
                                     <span class="eg-dashboard-stars" role="img" aria-label="{{ $ratingAnswer->rating_value }} / 5">
                                         @for($star = 1; $star <= 5; $star++)

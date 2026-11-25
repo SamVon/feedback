@@ -10,14 +10,19 @@ use App\Application\Exports;
 use App\Application\OtherQuestions;
 use App\Application\PopupPolicy;
 use App\Application\ReportFilters;
+use App\Filament\Pages\Dashboard;
+use App\Filament\Resources\Pages\EditOtherQuestion;
 use App\Filament\Resources\Pages\ListCustomerServices;
 use App\Filament\Resources\Pages\ListOtherQuestions;
 use App\Filament\Resources\Pages\ListRules;
 use App\Filament\Support\SurveyFields;
 use App\Jobs\BuildFeedbackExport;
+use App\Models\DailyFeedbackLimit;
 use App\Models\RuleVersion;
 use App\Models\SurveyVersion;
 use App\Models\User;
+use Carbon\CarbonImmutable;
+use Filament\Actions\Testing\TestAction;
 use Illuminate\Auth\Access\AuthorizationException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
@@ -156,21 +161,189 @@ class FeedbackUxTest extends TestCase
         }
         $this->assertFalse($rule->rules['always_on_frequency']['enforced']);
         $this->actingAs($staff);
-        Livewire::test(ListRules::class)->callTableAction('newVersion', $rule, data: array_replace($rule->rules, ['popup_schedule' => ['starts_at' => '2026-12-01 07:00:00', 'ends_at' => '2026-12-02 07:00:00']]))->assertHasNoActionErrors();
+        Livewire::test(ListRules::class)->mountAction('editPublished', ['rule' => $rule->id])
+            ->assertMountedActionModalSee([__('feedback.edit_rules')])
+            ->fillForm(['popup_schedule' => ['starts_at' => '2026-12-01 07:00:00', 'ends_at' => '2026-12-02 07:00:00']])
+            ->callMountedAction()->assertHasNoActionErrors();
         $draft = RuleVersion::where('status', 'draft')->firstOrFail();
         $this->assertSame('2026-12-01T00:00:00Z', $draft->rules['popup_schedule']['starts_at']);
         $this->assertFalse($draft->rules['always_on_frequency']['enforced']);
         $this->assertDatabaseCount('feedback_responses', 4);
     }
 
+    public function test_rules_create_and_edit_modals_preserve_published_version(): void
+    {
+        [$staff, , $published] = $this->setupSurvey();
+        $this->actingAs($staff);
+        $this->get('/admin/rules')->assertOk()->assertSee(__('feedback.rules_history'))->assertSee($staff->name);
+        $this->get('/admin/rules/create')->assertRedirect('/admin/rules?tableAction=draft');
+        $this->get('/admin/rules/'.$published->id.'/edit')
+            ->assertRedirect('/admin/rules?tableAction=newVersion&tableActionRecord='.$published->id);
+        $this->travel(1)->hour();
+
+        $create = Livewire::test(ListRules::class)->mountTableAction('draft')
+            ->assertMountedActionModalSee([__('feedback.new_rules'), __('feedback.rules_days', ['count' => 30])]);
+        $create->setTableActionData(['popup_schedule' => ['starts_at' => '2026-12-01', 'ends_at' => '2026-11-30']])
+            ->callMountedTableAction()->assertHasTableActionErrors(['popup_schedule.ends_at']);
+        $create->setTableActionData(['popup_schedule' => ['starts_at' => '2026-12-01', 'ends_at' => '2026-12-08'], 'enabled_transaction_types' => ['BUY_GOLD']])
+            ->assertMountedActionModalSee([__('feedback.rules_days', ['count' => 7])])
+            ->callMountedTableAction()->assertHasNoTableActionErrors()->assertTableActionNotMounted('draft');
+        $draft = RuleVersion::where('status', 'draft')->firstOrFail();
+        $this->assertEquals(['starts_at' => '2026-11-30T17:00:00Z', 'ends_at' => '2026-12-07T17:00:00Z'], $draft->rules['popup_schedule']);
+        $this->assertSame([true, false], array_column($draft->rules['transaction_rules'], 'enabled'));
+        $history = Livewire::test(ListRules::class);
+        $this->assertTrue($history->instance()->publishedRule()->is($published));
+        $history->filterTable('edited_at', ['from' => now('Asia/Vientiane')->subMinutes(30)->format('Y-m-d H:i:s')])
+            ->assertCanSeeTableRecords([$draft])->assertCanNotSeeTableRecords([$published]);
+
+        $secondEditor = Livewire::test(ListRules::class)->mountTableAction('editDraft', $draft);
+        Livewire::test(ListRules::class)->callTableAction('editDraft', $draft, data: ['channels.auto_prompt' => false])->assertHasNoTableActionErrors();
+        $this->assertFalse($draft->fresh()->rules['channels']['auto_prompt']);
+        $secondEditor->callMountedTableAction()->assertActionHalted(TestAction::make('editDraft')->table($draft));
+        $this->assertTrue($published->fresh()->rules['channels']['auto_prompt']);
+        $this->assertDatabaseCount('rule_versions', 2);
+
+        $viewer = User::factory()->create(['active' => true, 'permissions' => ['rules.read']]);
+        $this->actingAs($viewer)->get('/admin/rules/create')->assertForbidden();
+        $this->get('/admin/rules/'.$draft->id.'/edit')->assertForbidden();
+        Livewire::test(ListRules::class)->assertTableActionHidden('draft')->assertTableActionHidden('editDraft', $draft);
+    }
+
+    public function test_daily_limit_tab_saves_settings_and_shows_only_limit_changes(): void
+    {
+        [$staff, , $published] = $this->setupSurvey();
+        $this->actingAs($staff)->get('/admin/rules?tab=daily-limit')->assertOk()
+            ->assertSee(__('feedback.rules_daily_tab'))
+            ->assertSee(__('feedback.daily_limit_unset'))
+            ->assertDontSee(__('feedback.popup_schedule'));
+
+        Livewire::withQueryParams(['tab' => 'daily-limit'])->test(ListRules::class)
+            ->mountAction('editDailyLimit')->assertMountedActionModalSee([__('feedback.edit_daily_limit')])
+            ->fillForm(['response_limit' => 0])->callMountedAction()->assertHasActionErrors(['response_limit' => 'min'])
+            ->fillForm(['response_limit' => 3])->callMountedAction()->assertHasNoActionErrors()
+            ->assertSee(__('feedback.daily_limit_count', ['count' => 3]));
+        $first = DailyFeedbackLimit::current();
+        $this->assertDatabaseHas('daily_feedback_limits', ['response_limit' => 3, 'editor_id' => $staff->id]);
+        $this->assertDatabaseCount('rule_versions', 1);
+        $this->assertSame('published', $published->fresh()->status);
+
+        $this->travel(1)->hour();
+        Livewire::withQueryParams(['tab' => 'daily-limit'])->test(ListRules::class)
+            ->callAction('editDailyLimit', data: ['response_limit' => 4])->assertHasNoActionErrors()
+            ->filterTable('edited_at', ['from' => now('Asia/Vientiane')->subMinutes(30)->format('Y-m-d H:i:s')])
+            ->assertCanSeeTableRecords([DailyFeedbackLimit::current()])->assertCanNotSeeTableRecords([$first]);
+
+        $viewer = User::factory()->create(['active' => true, 'permissions' => ['rules.read', 'rules.edit']]);
+        $this->actingAs($viewer);
+        Livewire::withQueryParams(['tab' => 'daily-limit'])->test(ListRules::class)->assertActionHidden('editDailyLimit');
+    }
+
+    public function test_daily_limit_counts_successful_feedback_per_customer_until_vientiane_midnight(): void
+    {
+        [$staff, $version] = $this->setupSurvey();
+        $this->travelTo(CarbonImmutable::parse('2026-11-23 23:59:00', 'Asia/Vientiane')->utc());
+        $this->actingAs($staff);
+        Livewire::withQueryParams(['tab' => 'daily-limit'])->test(ListRules::class)
+            ->callAction('editDailyLimit', data: ['response_limit' => 1])->assertHasNoActionErrors();
+        $this->getJson('/internal/v1/feedback/config?survey_code=ux')->assertOk()
+            ->assertJsonPath('rules.always_on_frequency.limit', 1)->assertJsonPath('rules.always_on_frequency.enforced', true);
+
+        $first = $this->payload($version, 'daily-first');
+        $receipt = $this->send($first, 'daily-first')->assertCreated()->json();
+        $this->send($first, 'daily-first')->assertOk()->assertExactJson($receipt);
+        $next = $this->payload($version, 'daily-next');
+        $this->send($next, 'daily-next')->assertTooManyRequests()->assertHeader('Retry-After', '60');
+        $this->send(array_replace($next, ['actor_user_id' => 'different-actor']), 'daily-other-customer')->assertCreated();
+
+        $invitation = $this->eligibility($version, 'daily-popup')->assertCreated()->json('invitation_id');
+        $popup = array_replace($next, ['source' => 'auto_prompt', 'invitation_id' => $invitation, 'client_submission_id' => 'daily-popup']);
+        $this->send($popup, 'daily-popup')->assertCreated();
+
+        $this->travel(1)->minute();
+        $this->send($this->payload($version, 'daily-next'), 'daily-next')->assertCreated();
+    }
+
+    public function test_other_question_filters_validate_dates_and_restore_latest_version_defaults(): void
+    {
+        [$staff, $version] = $this->setupSurvey();
+        $comment = $version->questions->firstWhere('type', 'text');
+        $data = SurveyFields::data($version)['questions'][1];
+        $data['enabled'] = false;
+        $this->travel(2)->days();
+        $draft = app(OtherQuestions::class)->save($staff, $version->id, $version->revision, $comment->id, $data);
+        $newComment = $draft->questions()->where('code', 'comment')->firstOrFail();
+        $this->actingAs($staff);
+        $page = Livewire::test(ListOtherQuestions::class)->assertCanSeeTableRecords([$newComment])->assertCanNotSeeTableRecords([$comment]);
+        $page->filterTable('latest', false)->assertCanSeeTableRecords([$comment, $newComment])
+            ->filterTable('enabled', 0)->assertCanSeeTableRecords([$newComment])->assertCanNotSeeTableRecords([$comment]);
+        $page->call('resetTableFiltersForm')->assertCanSeeTableRecords([$newComment])->assertCanNotSeeTableRecords([$comment]);
+        $this->assertTrue($page->get('tableFilters')['latest']['isActive']);
+        $page->filterTable('latest', false)->filterTable('history_dates', [
+            'from' => $version->created_at->setTimezone('Asia/Vientiane')->toDateString(),
+            'until' => $version->created_at->setTimezone('Asia/Vientiane')->toDateString(),
+        ])->assertCanSeeTableRecords([$comment])->assertCanNotSeeTableRecords([$newComment]);
+        $page->set('tableDeferredFilters.history_dates.from', '2026-11-30')->set('tableDeferredFilters.history_dates.until', '2026-11-01')
+            ->call('applyTableFilters')->assertHasErrors('tableDeferredFilters.history_dates.until');
+        $page->call('resetTableFiltersForm')->assertHasNoErrors()->assertCanSeeTableRecords([$newComment]);
+        $this->withSession(['feedback_locale' => 'lo'])->get('/admin/other-questions')->assertOk()
+            ->assertSee('ກັ່ນຕອງຂໍ້ມູນ')->assertSee(__('feedback.question_apply_filters', [], 'lo'))
+            ->assertSee(__('feedback.question_all_statuses', [], 'lo'));
+    }
+
+    public function test_other_question_create_defaults_and_bilingual_choice_fields_save_safely(): void
+    {
+        [$staff, $version] = $this->setupSurvey();
+        $this->actingAs($staff);
+        $page = Livewire::test(EditOtherQuestion::class)->assertSet('data.survey_version_id', $version->id)
+            ->assertSet('data.revision', $version->revision)->assertSet('data.question.type', 'choice')
+            ->assertSet('data.question.enabled', false)->assertSee('eg-other-question-main', false);
+        $this->assertCount(1, $page->get('data')['question']['options']);
+        $question = ['code' => 'compact-choice', 'type' => 'choice', 'label' => ['en' => 'New question', 'lo' => 'ຄຳຖາມໃໝ່'],
+            'enabled' => false, 'required' => false, 'max_choices' => 2, 'max_length' => 2000, 'options' => [
+                ['code' => 'second', 'label' => ['en' => 'Second', 'lo' => 'ຂໍ້ສອງ']],
+                ['code' => 'first', 'label' => ['en' => 'First', 'lo' => 'ຂໍ້ໜຶ່ງ']],
+            ]];
+        $page->fillForm(['survey_version_id' => $version->id, 'revision' => $version->revision, 'question' => $question])->call('save')
+            ->assertHasNoErrors()->assertRedirect('/admin/other-questions');
+        $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
+        $saved = $draft->questions()->where('code', 'compact-choice')->firstOrFail();
+        $this->assertSame($question['label'], $saved->label);
+        $this->assertFalse($saved->enabled);
+        $this->assertSame(['second', 'first'], $saved->options->pluck('code')->all());
+        $this->assertSame(2, $version->fresh('questions')->questions->count());
+    }
+
+    public function test_other_question_create_requires_translation_and_limits_new_labels_without_losing_legacy_text(): void
+    {
+        [$staff, $version] = $this->setupSurvey();
+        $this->actingAs($staff);
+        $question = ['code' => 'validation-choice', 'type' => 'choice', 'label' => ['en' => '', 'lo' => str_repeat('a', 101)],
+            'enabled' => false, 'required' => false, 'max_choices' => 1, 'max_length' => 2000, 'options' => [
+                ['code' => 'answer-one', 'label' => ['en' => 'Answer', 'lo' => str_repeat('b', 101)]],
+            ]];
+        $page = Livewire::test(EditOtherQuestion::class)->fillForm(['survey_version_id' => $version->id, 'revision' => $version->revision, 'question' => $question])
+            ->call('save')->assertHasErrors(['data.question.label.lo', 'data.question.label.en']);
+        $this->assertTrue(collect($page->instance()->getErrorBag()->keys())->contains(fn (string $key): bool => str_ends_with($key, '.label.lo') && str_contains($key, '.options.')));
+        $this->assertSame(1, SurveyVersion::count());
+        $legacyData = SurveyFields::data($version);
+        $legacyData['questions'][1]['label'] = ['en' => str_repeat('e', 150), 'lo' => str_repeat('l', 150)];
+        $legacyVersion = app(Changes::class)->surveyDraft($staff, $legacyData);
+        $this->publish($staff, 'survey', $legacyVersion);
+        $comment = $legacyVersion->questions()->where('type', 'text')->firstOrFail();
+        Livewire::test(EditOtherQuestion::class, ['record' => $comment->id])->call('save')->assertHasNoErrors();
+        $this->assertSame(str_repeat('e', 150), SurveyVersion::where('status', 'draft')->firstOrFail()->questions()->where('code', $comment->code)->firstOrFail()->label['en']);
+    }
+
     public function test_other_question_editor_keeps_published_records_and_permissions(): void
     {
         [$staff, $version] = $this->setupSurvey();
         $this->actingAs($staff);
+        $this->get('/admin/other-questions/create')->assertOk();
+        $this->get('/admin/other-questions/'.$version->questions->firstWhere('type', 'text')->id.'/edit')->assertOk();
         $data = SurveyFields::data($version);
         $data['questions'][1]['label']['en'] = 'Updated question';
         $data['questions'][1]['enabled'] = false;
-        Livewire::test(ListOtherQuestions::class)->callTableAction('editQuestion', $version->questions->firstWhere('type', 'text'), data: ['revision' => $version->revision, 'question' => $data['questions'][1]])->assertHasNoActionErrors();
+        Livewire::test(EditOtherQuestion::class, ['record' => $version->questions->firstWhere('type', 'text')->id])->fillForm(['survey_version_id' => $version->id, 'revision' => $version->revision, 'question' => $data['questions'][1]])->call('save')->assertHasNoErrors();
         $this->assertSame('Comment', $version->fresh('questions')->questions->firstWhere('type', 'text')->label['en']);
         $this->assertSame($staff->id, $version->fresh('lastEdit.staff')->lastEdit->staff->id);
         $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
@@ -264,6 +437,47 @@ class FeedbackUxTest extends TestCase
         $this->assertDatabaseCount('rule_versions', 1);
     }
 
+    public function test_dashboard_counts_api_responses_across_versions_and_excludes_seeded_demo_data(): void
+    {
+        [$staff, $first] = $this->setupSurvey();
+        $firstPayload = $this->payload($first, 'dashboard-first', 3);
+        $firstPayload['answers'][] = ['question_id' => $first->questions->firstWhere('type', 'text')->id, 'text_value' => 'Older API comment'];
+        $this->send($firstPayload, 'dashboard-first')->assertCreated();
+
+        $draft = SurveyFields::data($first);
+        $draft['questions'][0]['label']['en'] = 'Updated rating';
+        $draft['questions'][] = ['code' => 'choice', 'type' => 'choice', 'label' => ['en' => 'What went well?', 'lo' => 'ຄຳຖາມ'], 'required' => false, 'max_length' => 500, 'max_choices' => 1, 'options' => [['code' => 'service', 'label' => ['en' => 'Service', 'lo' => 'ບໍລິການ']]]];
+        $this->travel(1)->minute();
+        $second = app(Changes::class)->surveyDraft($staff, $draft);
+        $this->publish($staff, 'survey', $second);
+        $secondPayload = $this->payload($second, 'dashboard-second', 5);
+        $choice = $second->questions->firstWhere('type', 'choice');
+        $secondPayload['answers'][] = ['question_id' => $choice->id, 'option_ids' => [$choice->options->first()->id]];
+        $this->send($secondPayload, 'dashboard-second')->assertCreated();
+
+        $this->travel(1)->minute();
+        $demo = $this->payload($second, 'dashboard-demo', 1);
+        $demo['answers'][] = ['question_id' => $second->questions->firstWhere('type', 'text')->id, 'text_value' => 'Seeded demo comment'];
+        $demoId = $this->send($demo, 'dashboard-demo')->assertCreated()->json('response_id');
+        DB::table('feedback_responses')->where('id', $demoId)->update(['caller' => 'demo']);
+        $empty = app(Changes::class)->surveyDraft($staff, $draft);
+        $this->publish($staff, 'survey', $empty);
+
+        $this->actingAs($staff);
+        $page = Livewire::test(Dashboard::class)->assertSee('Older API comment')->assertDontSee('Seeded demo comment');
+        $summary = $page->instance()->summary();
+        $this->assertSame(2, $summary['response_count']);
+        $this->assertSame(1, $summary['unique_customers']);
+        $this->assertSame(1, $summary['rating_count']);
+        $this->assertSame(5.0, $summary['average']);
+        $this->assertSame(100.0, $summary['csat']);
+        $this->assertSame('Updated rating', $summary['rating_question_label']);
+        $this->assertSame(100.0, $page->instance()->choiceSummary()['options'][0]['percent']);
+
+        $page->set('filters.survey_version_id', $first->id);
+        $this->assertSame(3.0, $page->instance()->summary()['average']);
+    }
+
     public function test_exact_ux_example_has_436_average_and_85_csat(): void
     {
         [$staff, $version] = $this->setupSurvey();
@@ -338,8 +552,8 @@ class FeedbackUxTest extends TestCase
         $this->getJson('/internal/v1/feedback/config?survey_code=ux&source=always_on')->assertJsonCount(1, 'app_config.questions');
         $disabled = $draft->questions->firstWhere('code', 'comment');
         Livewire::test(ListOtherQuestions::class)->callTableAction('toggleEnabled', $disabled, data: ['revision' => 1])->assertHasNoActionErrors();
-        $enabled = SurveyVersion::where('status', 'draft')->firstOrFail();
-        $this->publish($staff, 'survey', $enabled);
+        $enabled = SurveyVersion::where('status', 'published')->orderByDesc('version')->firstOrFail();
+        $this->assertTrue($enabled->questions->firstWhere('code', 'comment')->enabled);
         $this->getJson('/internal/v1/feedback/config?survey_code=ux&source=always_on')->assertJsonCount(2, 'app_config.questions');
         $this->assertDatabaseHas('feedback_answers', ['question_id' => $comment->id, 'text_value' => 'Keep this answer']);
     }
@@ -352,7 +566,7 @@ class FeedbackUxTest extends TestCase
             ['code' => 'b', 'label' => ['en' => 'Second', 'lo' => 'Second']],
             ['code' => 'a', 'label' => ['en' => 'First', 'lo' => 'First']],
         ]];
-        Livewire::test(ListOtherQuestions::class)->callTableAction('createQuestion', data: ['survey_version_id' => $version->id, 'revision' => 1, 'question' => $question])->assertHasNoActionErrors();
+        Livewire::test(EditOtherQuestion::class)->fillForm(['survey_version_id' => $version->id, 'revision' => 1, 'question' => $question])->call('save')->assertHasNoErrors();
         $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
         $extra = $draft->questions->firstWhere('code', 'extra');
         $this->assertSame(['b', 'a'], $extra->options->pluck('code')->all());

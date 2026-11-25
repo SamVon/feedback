@@ -2,10 +2,10 @@
 
 namespace App\Filament\Resources;
 
+use App\Application\ReportFilters;
+use App\Filament\Support\FilterFields;
 use App\Filament\Support\SurveyFields;
-use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
-use Filament\Forms\Components\DatePicker;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Filters\Filter;
 use Filament\Tables\Table;
@@ -54,7 +54,8 @@ class RatingQuestionResource extends SurveyResource
         $table = parent::table($table);
         foreach ($table->getRecordActions() as $action) {
             if (in_array($action->getName(), ['editDraft', 'newVersion'], true)) {
-                $action->url(fn ($record) => static::getUrl('edit', ['record' => $record]))->schema([])->action(null);
+                $action->label(__('feedback.edit_question'))->icon('heroicon-o-pencil-square')
+                    ->url(fn ($record) => static::getUrl('edit', ['record' => $record]))->schema([])->action(null);
                 if ($action->getName() === 'newVersion') {
                     $action->visible(fn ($record) => $record->status !== 'draft' && auth()->user()->can('survey.edit'));
                 }
@@ -65,11 +66,9 @@ class RatingQuestionResource extends SurveyResource
             Action::make('createRating')->label(__('feedback.create_rating_question'))->icon('heroicon-o-plus')->visible(fn () => auth()->user()->can('survey.edit'))->url(static::getUrl('create')),
         ])->columns($columns)->filters([
             Filter::make('history_dates')->schema([
-                DatePicker::make('from')->label(__('feedback.from')),
-                DatePicker::make('until')->label(__('feedback.until'))->afterOrEqual('from'),
-            ])->query(fn (Builder $query, array $data): Builder => $query
-                ->when($data['from'] ?? null, fn (Builder $query, $date) => $query->where('created_at', '>=', CarbonImmutable::parse($date, 'Asia/Vientiane')->startOfDay()->utc()))
-                ->when($data['until'] ?? null, fn (Builder $query, $date) => $query->where('created_at', '<', CarbonImmutable::parse($date, 'Asia/Vientiane')->startOfDay()->addDay()->utc()))),
+                FilterFields::dateTime('from', __('feedback.from')),
+                FilterFields::dateTime('until', __('feedback.until')),
+            ])->columns(2)->query(fn (Builder $query, array $data): Builder => ReportFilters::applyDateRange($query, $data, 'created_at')),
         ]);
     }
 

@@ -10,6 +10,7 @@ use App\Filament\Resources\RatingQuestionResource;
 use App\Filament\Support\SurveyFields;
 use App\Models\FeedbackAnswer;
 use App\Models\RuleVersion;
+use App\Models\Survey;
 use App\Models\SurveyVersion;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -154,8 +155,8 @@ class RatingReasonsTest extends TestCase
         foreach (range(1, 5) as $score) {
             $page->assertSet('reasons.'.$score, []);
         }
-        $page->call('editReasons', 5)->assertHasErrors(['data.code', 'data.name', 'data.label.en', 'data.label.lo']);
-        $page->set('data.code', 'page-survey')->set('data.name', 'Page survey')
+        $page->call('editReasons', 5)->assertHasErrors(['data.name', 'data.label.en', 'data.label.lo']);
+        $page->set('data.name', 'Page survey')
             ->set('data.label.en', 'How was your experience?')->set('data.label.lo', 'ທ່ານພໍໃຈບໍ?')
             ->call('editReasons', 5)->assertHasNoErrors()->assertSet('editingScore', 5)
             ->set('reasonData.items', [
@@ -165,10 +166,42 @@ class RatingReasonsTest extends TestCase
             ->call('editReasons', 1)->set('reasonData.items', [['code' => 'discard', 'label' => ['en' => 'Discard', 'lo' => 'Discard']]])->call('cancelReasons')
             ->assertSet('reasons.1', [])->call('save')->assertHasNoErrors();
         $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
+        $this->assertMatchesRegularExpression('/^rating_[0-9a-hjkmnp-tv-z]{26}$/', $draft->survey->code);
         $page->assertRedirect(RatingQuestionResource::getUrl('edit', ['record' => $draft, 'question' => 'overall']));
         $this->assertSame('How was your experience?', $draft->questions->first()->label['en']);
         $this->assertSame(['r5_fast', 'r5_easy'], $draft->questions->first()->options->pluck('code')->all());
         $this->assertDatabaseCount('feedback_responses', 0);
+    }
+
+    public function test_rating_creation_generates_unique_survey_codes_and_reuses_the_code_on_repeat_save(): void
+    {
+        $existing = $this->publish(false);
+        $this->actingAs($this->staff);
+        $this->freezeTime();
+        $codes = [];
+        foreach (range(1, 2) as $index) {
+            $page = Livewire::test(EditRatingQuestion::class)
+                ->set('data.code', $existing->survey->code)->set('data.name', 'Same survey name')
+                ->set('data.label.en', 'How was your experience?')->set('data.label.lo', 'ທ່ານພໍໃຈບໍ?')
+                ->call('save')->assertHasNoErrors();
+            $version = SurveyVersion::findOrFail($page->get('versionId'));
+            $codes[] = $version->survey->code;
+            $this->assertMatchesRegularExpression('/^rating_[0-9a-hjkmnp-tv-z]{26}$/', $version->survey->code);
+            $this->assertNotSame($existing->survey_id, $version->survey_id);
+            $page->set('data.label.en', 'Updated after save')->call('save')->assertHasNoErrors();
+            $this->assertSame($version->id, $page->get('versionId'));
+            $this->assertSame(2, $version->fresh()->revision);
+            $this->assertSame($codes[$index - 1], $version->fresh('survey')->survey->code);
+            app(Changes::class)->transition($this->staff, 'survey', $version->id, 2, 'publish');
+            $this->getJson('/internal/v1/feedback/config?survey_code='.$version->survey->code)->assertOk()
+                ->assertJsonPath('app_config.survey_code', $version->survey->code)
+                ->assertJsonPath('app_config.survey_version_id', $version->id)
+                ->assertJsonPath('app_config.questions.0.label.en', 'Updated after save');
+        }
+        $this->assertNotSame($codes[0], $codes[1]);
+        $this->assertSame(3, Survey::count());
+        $this->assertDatabaseCount('survey_versions', 3);
+        $this->assertSame('rating-survey', $existing->fresh('survey')->survey->code);
     }
 
     public function test_full_page_edit_preserves_other_questions_and_rejects_stale_save(): void
@@ -181,6 +214,8 @@ class RatingReasonsTest extends TestCase
             ['code' => 'reason-1', 'label' => ['en' => 'First moved down', 'lo' => 'First moved down']],
         ])->call('applyReasons')->call('save')->assertHasNoErrors();
         $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
+        $this->assertSame($published->survey_id, $draft->survey_id);
+        $this->assertSame('rating-survey', $draft->survey->code);
         $this->assertSame(['r4_reason-2', 'r4_reason-1'], $draft->questions->first()->options->where('rating_value', 4)->pluck('code')->values()->all());
         $this->assertCount(4, $published->fresh('questions.options')->questions->first()->options->where('rating_value', 4));
         $this->assertSame('Additional comments', $draft->questions->firstWhere('type', 'text')->label['en']);

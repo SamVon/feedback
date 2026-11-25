@@ -4,10 +4,6 @@
     @foreach(\App\Application\ChannelPolicy::schedule($rules) as $boundary => $value)
         <p>{{ __('feedback.'.$boundary) }}: {{ $value ? \Carbon\CarbonImmutable::parse($value)->setTimezone('Asia/Vientiane')->format('d/m/Y H:i') : '—' }}</p>
     @endforeach
-    <h3>{{ __('feedback.always_on_policy') }}</h3>
-    <p><strong>{{ __('feedback.always_on_proposal') }}</strong></p>
-    <p>{{ __('feedback.always_on_proposal_hint') }}</p>
-
     <p>{{ __('feedback.popup_policy_hint') }}</p>
     <p><strong>{{ __('feedback.popup_reset_hint') }}</strong></p>
     @if($legacy)<p>{{ __('feedback.popup_legacy_hint') }}</p>@endif

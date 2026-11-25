@@ -5,18 +5,44 @@ namespace App\Filament\Support;
 use App\Models\Question;
 use App\Models\Survey;
 use App\Models\SurveyVersion;
-use Filament\Forms\Components\DatePicker;
+use App\Application\ReportFilters;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
 
 final class FilterFields
 {
+    public static function dateTime(string $name, string $label): FilterDateTimePicker
+    {
+        $field = FilterDateTimePicker::make($name)->label($label)->native(false)->seconds(false)
+            ->displayFormat('d/m/Y H:i')->format('Y-m-d H:i:s')->timezone('Asia/Vientiane')
+            ->placeholder('dd/mm/yyyy HH:mm')->helperText(__('feedback.filter_time_hint'));
+
+        return $name === 'until' ? $field->afterOrEqual('from') : $field;
+    }
+
+    public static function customerList(): array
+    {
+        return [
+            Select::make('survey_id')->label(__('feedback.survey'))->options(fn () => Survey::pluck('name', 'id'))
+                ->placeholder(__('feedback.customer_all'))->live()->afterStateUpdated(function ($set): void {
+                    $set('survey_version_id', null);
+                    $set('question_id', null);
+                }),
+            Select::make('rating')->label(__('feedback.rating'))->placeholder(__('feedback.customer_all'))
+                ->options([5 => '5 ★', 4 => '4 ★', 3 => '3 ★', 2 => '2 ★', 1 => '1 ★']),
+            Select::make('transaction_type')->label(__('feedback.transaction_type'))->placeholder(__('feedback.customer_all'))
+                ->options(__('feedback.rules_transaction_names')),
+            self::dateTime('from', __('feedback.from')),
+            self::dateTime('until', __('feedback.until')),
+        ];
+    }
+
     public static function make(): array
     {
         return [
-            DatePicker::make('from')->label(__('feedback.from'))->default(now('Asia/Vientiane')->subDays(29)->toDateString()),
-            DatePicker::make('until')->label(__('feedback.until'))->default(now('Asia/Vientiane')->toDateString())->afterOrEqual('from'),
+            self::dateTime('from', __('feedback.from'))->default(fn (): string => ReportFilters::dateInput(now('Asia/Vientiane')->subDays(29)->toDateString())),
+            self::dateTime('until', __('feedback.until'))->default(fn (): string => ReportFilters::dateInput(now('Asia/Vientiane')->toDateString(), true)),
             Select::make('survey_id')->label(__('feedback.survey'))->options(fn () => Survey::pluck('name', 'id'))->live()->afterStateUpdated(function ($set) {
                 $set('survey_version_id', null);
                 $set('question_id', null);

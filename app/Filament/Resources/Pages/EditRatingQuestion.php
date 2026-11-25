@@ -42,6 +42,9 @@ class EditRatingQuestion extends Page
     public string $questionCode = 'overall';
 
     #[Locked]
+    public ?string $surveyCode = null;
+
+    #[Locked]
     public array $questionLinks = [];
 
     #[Locked]
@@ -63,7 +66,7 @@ class EditRatingQuestion extends Page
     {
         $this->authorizeEditor();
         $this->reasons = array_fill(1, 5, []);
-        $initial = ['code' => '', 'name' => '', 'label' => ['en' => '', 'lo' => ''], 'enabled' => true, 'required' => true, 'max_length' => 2000, 'max_choices' => 3, 'rating_reasons_required' => false];
+        $initial = ['name' => '', 'label' => ['en' => '', 'lo' => ''], 'enabled' => true, 'required' => true, 'max_length' => 2000, 'max_choices' => 3, 'rating_reasons_required' => false];
         if ($record !== null) {
             $version = RatingQuestionResource::getEloquentQuery()->findOrFail($record);
             $ratingQuestions = $version->questions->where('type', 'rating');
@@ -72,13 +75,16 @@ class EditRatingQuestion extends Page
             $this->versionId = $version->id;
             $this->revision = $version->revision;
             $this->versionStatus = $version->status;
+            $this->surveyCode = $version->survey->code;
             $this->questionCode = $question->code;
             $questionData = collect(SurveyFields::data($version)['questions'])->firstWhere('code', $question->code);
-            $initial = array_replace($initial, $questionData, ['code' => $version->survey->code, 'name' => $version->survey->name]);
+            $initial = array_replace($initial, $questionData, ['name' => $version->survey->name]);
             foreach (range(1, 5) as $score) {
                 $this->reasons[$score] = $questionData['rating_reasons'][$score] ?? [];
             }
             $this->questionLinks = $ratingQuestions->map(fn ($item) => ['label' => $item->label[app()->getLocale()] ?? $item->label['en'], 'url' => RatingQuestionResource::getUrl('edit', ['record' => $version, 'question' => $item->code])])->values()->all();
+        } else {
+            $this->surveyCode = 'rating_'.Str::lower((string) Str::ulid());
         }
         $this->questionForm->fill($initial);
     }
@@ -91,8 +97,8 @@ class EditRatingQuestion extends Page
     public function questionForm(Schema $schema): Schema
     {
         return $schema->components([
-            TextInput::make('code')->label(__('feedback.code'))->required()->alphaDash()->maxLength(60)->visible(fn () => $this->versionId === null)->dehydratedWhenHidden(),
-            TextInput::make('name')->label(__('feedback.name'))->required()->maxLength(200)->visible(fn () => $this->versionId === null)->dehydratedWhenHidden(),
+            TextInput::make('name')->label(__('feedback.name'))->required()->maxLength(200)
+                ->helperText(__('feedback.rating_survey_code_auto'))->visible(fn () => $this->versionId === null)->dehydratedWhenHidden(),
             TextInput::make('label.en')->label(__('feedback.question').' · English')->required()->maxLength(500),
             TextInput::make('label.lo')->label(__('feedback.question').' · ລາວ')->required()->maxLength(500),
             Section::make(__('feedback.rating_options_settings'))->collapsed()->columnSpanFull()->schema([
@@ -164,8 +170,9 @@ class EditRatingQuestion extends Page
                     $index = collect($draft['questions'])->search(fn ($item) => $item['code'] === $this->questionCode && $item['type'] === 'rating');
                     abort_if($index === false, 409, __('feedback.rating_stale'));
                 } else {
-                    abort_if(Survey::where('code', $data['code'])->exists(), 409, __('feedback.rating_code_exists'));
-                    $draft = ['code' => $data['code'], 'name' => $data['name'], 'channels' => ['auto_prompt', 'always_on'], 'questions' => []];
+                    abort_unless(filled($this->surveyCode), 409, __('feedback.rating_stale'));
+                    abort_if(Survey::where('code', $this->surveyCode)->exists(), 409, __('feedback.rating_code_exists'));
+                    $draft = ['code' => $this->surveyCode, 'name' => $data['name'], 'channels' => ['auto_prompt', 'always_on'], 'questions' => []];
                     $index = 0;
                 }
                 $draft['questions'][$index] = collect($data)->only(['label', 'enabled', 'required', 'max_choices', 'max_length', 'rating_reasons_required'])->all() + [
@@ -182,6 +189,9 @@ class EditRatingQuestion extends Page
 
             return;
         }
+        $this->versionId = $version->id;
+        $this->revision = $version->revision;
+        $this->versionStatus = $version->status;
         Notification::make()->success()->title(__('feedback.question_draft_saved', ['version' => $version->version]))->body(__('feedback.question_publish_hint'))->send();
         $this->redirect(RatingQuestionResource::getUrl('edit', ['record' => $version, 'question' => $this->questionCode]));
     }

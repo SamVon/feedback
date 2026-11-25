@@ -2,24 +2,27 @@
 
 namespace App\Filament\Resources;
 
+use App\Application\Changes;
 use App\Application\OtherQuestions;
+use App\Application\ReportFilters;
+use App\Filament\Support\FilterFields;
 use App\Filament\Support\OtherQuestionFields;
 use App\Filament\Support\ReadOnlyResource;
 use App\Models\Question;
 use App\Models\SurveyVersion;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
-use Filament\Forms\Components\DatePicker;
 use Filament\Forms\Components\Hidden;
-use Filament\Forms\Components\Select;
 use Filament\Notifications\Notification;
-use Filament\Schemas\Components\Utilities\Set;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
+use Filament\Tables\Enums\FiltersResetActionPosition;
 use Filament\Tables\Filters\Filter;
+use Filament\Tables\Filters\Indicator;
 use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Support\Facades\DB;
 
 class OtherQuestionResource extends ReadOnlyResource
 {
@@ -58,37 +61,63 @@ class OtherQuestionResource extends ReadOnlyResource
             TextColumn::make('opened_at')->label(__('feedback.question_opened_at'))->state(fn ($record) => $record->enabled ? $record->version->published_at : null)->dateTime('d/m/Y H:i', 'Asia/Vientiane')->placeholder('—'),
             TextColumn::make('closed_at')->label(__('feedback.question_closed_at'))->state(fn ($record) => ! $record->enabled ? $record->version->published_at : null)->dateTime('d/m/Y H:i', 'Asia/Vientiane')->placeholder('—'),
             TextColumn::make('version.lastEdit.staff.name')->label(__('feedback.operator'))->placeholder('—'),
-            TextColumn::make('version.status')->label(__('feedback.version_status'))->badge(),
+            TextColumn::make('version.status')->label(__('feedback.version_status'))->formatStateUsing(fn (string $state): string => OtherQuestionFields::versionStatusLabel($state))->badge(),
         ])->defaultSort(fn (Builder $query) => $query->orderByDesc('survey_version_id')->orderBy('position'))->filters([
-            Filter::make('latest')->label(__('feedback.latest_versions'))->toggle()->default()->query(fn (Builder $query) => $query->whereHas('version', fn (Builder $version) => $version->whereRaw('version = (select max(latest.version) from survey_versions as latest where latest.survey_id = survey_versions.survey_id)'))),
-            SelectFilter::make('enabled')->label(__('feedback.question_status'))->options([1 => __('feedback.popup_yes'), 0 => __('feedback.popup_no')]),
-            Filter::make('history_dates')->schema([DatePicker::make('from')->label(__('feedback.from')), DatePicker::make('until')->label(__('feedback.until'))->afterOrEqual('from')])->columns(2)->query(fn (Builder $query, array $data) => $query->whereHas('version', fn (Builder $version) => $version
-                ->when($data['from'] ?? null, fn (Builder $query, $date) => $query->where('created_at', '>=', CarbonImmutable::parse($date, 'Asia/Vientiane')->startOfDay()->utc()))
-                ->when($data['until'] ?? null, fn (Builder $query, $date) => $query->where('created_at', '<', CarbonImmutable::parse($date, 'Asia/Vientiane')->startOfDay()->addDay()->utc())))),
-        ], layout: FiltersLayout::AboveContent)->headerActions([
-            Action::make('createQuestion')->label(__('feedback.create_question'))->icon('heroicon-o-plus')->visible($editable)->schema([
-                Select::make('survey_version_id')->label(__('feedback.base_survey_version'))->options(fn () => SurveyVersion::with('survey')->orderByDesc('created_at')->get()->mapWithKeys(fn ($version) => [$version->id => $version->survey->name.' · v'.$version->version.' · '.$version->status]))->required()->live()->afterStateUpdated(fn ($state, Set $set) => $set('revision', SurveyVersion::find($state)?->revision)),
-                ...$revision, ...OtherQuestionFields::make(),
-            ])->modalDescription(__('feedback.question_publish_hint'))->action(function (array $data) {
-                static::saved(app(OtherQuestions::class)->save(auth()->user(), $data['survey_version_id'], (int) $data['revision'], null, $data['question']));
-            }),
-        ])->recordActions([
-            Action::make('editQuestion')->label(__('feedback.edit_question'))->icon('heroicon-o-pencil-square')->visible($editable)->fillForm(fn ($record) => OtherQuestionFields::data($record))->schema([...$revision, ...OtherQuestionFields::make()])->modalDescription(__('feedback.question_publish_hint'))->action(function ($record, array $data) {
-                static::saved(app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, $data['question']));
-            }),
-            Action::make('toggleEnabled')->label(fn ($record) => $record->enabled ? __('feedback.close_question') : __('feedback.open_question'))->icon('heroicon-o-power')->color(fn ($record) => $record->enabled ? 'danger' : 'success')->visible($editable)->fillForm(fn ($record) => ['revision' => $record->version->revision])->schema($revision)->requiresConfirmation()->modalDescription(__('feedback.question_publish_hint'))->action(function ($record, array $data) {
-                $question = OtherQuestionFields::data($record)['question'];
-                $question['enabled'] = ! $record->enabled;
-                static::saved(app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, $question));
-            }),
-            Action::make('removeQuestion')->label(__('feedback.remove_question'))->icon('heroicon-o-trash')->color('danger')->visible($editable)->fillForm(fn ($record) => ['revision' => $record->version->revision])->schema($revision)->requiresConfirmation()->modalDescription(__('feedback.question_remove_hint'))->action(function ($record, array $data) {
-                static::saved(app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, remove: true));
-            }),
-        ])->paginated([10, 25, 50]);
+            SelectFilter::make('enabled')->label(__('feedback.question_status'))->placeholder(__('feedback.question_all_statuses'))
+                ->options([1 => __('feedback.popup_yes'), 0 => __('feedback.popup_no')])->columnSpan(1),
+            Filter::make('history_dates')->schema([
+                FilterFields::dateTime('from', __('feedback.question_created_from')),
+                FilterFields::dateTime('until', __('feedback.question_created_until')),
+            ])->columns(['default' => 1, 'sm' => 2])->columnSpan(['default' => 1, 'md' => 2])->indicateUsing(function (array $data): array {
+                $indicators = [];
+                foreach (['from' => 'question_created_from', 'until' => 'question_created_until'] as $field => $label) {
+                    if (filled($data[$field] ?? null)) {
+                        $indicators[] = Indicator::make(__('feedback.'.$label).': '.CarbonImmutable::parse(ReportFilters::dateInput($data[$field], $field === 'until'), 'Asia/Vientiane')->format('d/m/Y H:i'))->removeField($field);
+                    }
+                }
+
+                return $indicators;
+            })->query(fn (Builder $query, array $data) => $query->whereHas('version', fn (Builder $version) => ReportFilters::applyDateRange($version, $data, 'created_at'))),
+            Filter::make('latest')->label(__('feedback.latest_versions'))->toggle()->default()->columnSpanFull()
+                ->modifyFormFieldUsing(fn ($field) => $field->helperText(__('feedback.question_latest_hint'))->extraFieldWrapperAttributes(['class' => 'eg-question-latest-filter']))
+                ->query(fn (Builder $query) => $query->whereHas('version', fn (Builder $version) => $version->whereRaw('version = (select max(latest.version) from survey_versions as latest where latest.survey_id = survey_versions.survey_id)'))),
+        ], layout: FiltersLayout::AboveContent)->filtersFormColumns(['default' => 1, 'md' => 3])
+            ->filtersResetActionPosition(FiltersResetActionPosition::Footer)
+            ->filtersApplyAction(fn (Action $action): Action => $action->label(__('feedback.question_apply_filters'))->icon('heroicon-o-magnifying-glass'))
+            ->filtersResetAction(fn (Action $action): Action => $action->label(__('feedback.question_reset_filters'))->icon('heroicon-o-arrow-path')->color('gray')->outlined()->button())
+            ->searchPlaceholder(__('feedback.question_search_placeholder'))
+            ->extraAttributes(['class' => 'eg-other-questions-table'])->headerActions([
+                Action::make('createQuestion')->label(__('feedback.create_question'))->icon('heroicon-o-plus')->visible($editable)->url(static::getUrl('create')),
+            ])->recordActions([
+                Action::make('editQuestion')->label(__('feedback.edit_question'))->icon('heroicon-o-pencil-square')->visible($editable)->url(fn ($record) => static::getUrl('edit', ['record' => $record])),
+                Action::make('toggleEnabled')->label(fn ($record) => $record->enabled ? __('feedback.close_question') : __('feedback.open_question'))->icon('heroicon-o-power')->color(fn ($record) => $record->enabled ? 'danger' : 'success')->visible(fn ($record) => auth()->user()->can('survey.edit') && ($record->enabled || auth()->user()->can('changes.publish')))->fillForm(fn ($record) => ['revision' => $record->version->revision])->schema($revision)->requiresConfirmation()
+                    ->modalSubmitActionLabel(fn ($record) => $record->enabled ? __('feedback.close_question') : __('feedback.open_question'))
+                    ->modalCancelActionLabel(__('feedback.other_question_cancel'))
+                    ->modalDescription(fn ($record) => $record->enabled ? __('feedback.question_publish_hint') : __('feedback.question_enable_publish_hint'))->action(function ($record, array $data) {
+                        $question = OtherQuestionFields::data($record)['question'];
+                        $question['enabled'] = ! $record->enabled;
+                        if (! $question['enabled']) {
+                            static::saved(app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, $question));
+
+                            return;
+                        }
+                        DB::transaction(function () use ($record, $data, $question) {
+                            $version = app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, $question);
+                            app(Changes::class)->transition(auth()->user(), 'survey', $version->id, $version->revision, 'publish');
+                        }, 5);
+                        Notification::make()->success()->title(__('feedback.question_enabled_published'))->send();
+                    }),
+                Action::make('removeQuestion')->label(__('feedback.remove_question'))->icon('heroicon-o-trash')->color('danger')->visible($editable)->fillForm(fn ($record) => ['revision' => $record->version->revision])->schema($revision)->requiresConfirmation()
+                    ->modalSubmitActionLabel(__('feedback.remove_question'))
+                    ->modalCancelActionLabel(__('feedback.other_question_cancel'))
+                    ->modalDescription(__('feedback.question_remove_hint'))->action(function ($record, array $data) {
+                        static::saved(app(OtherQuestions::class)->save(auth()->user(), $record->survey_version_id, (int) $data['revision'], $record->id, remove: true));
+                    }),
+            ])->paginated([10, 25, 50]);
     }
 
     public static function getPages(): array
     {
-        return ['index' => Pages\ListOtherQuestions::route('/')];
+        return ['index' => Pages\ListOtherQuestions::route('/'), 'create' => Pages\EditOtherQuestion::route('/create'), 'edit' => Pages\EditOtherQuestion::route('/{record}/edit')];
     }
 }

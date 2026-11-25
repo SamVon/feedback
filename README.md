@@ -1,5 +1,26 @@
 # Easy Gold Feedback Service & Staff Web
 
+## Docker staging
+
+Docker Compose runs Apache/PHP, a queue worker, a scheduler and MySQL 8.4. Docker and the Compose plugin are required. On the staging server, copy `.env.docker.example` to `.env.docker`, set a unique database password and MySQL root password, set `APP_URL` to the HTTPS URL and configure the staging customer JWT secret and any service-token hashes. Keep this file private and never commit it. Use test credentials and an isolated staging database.
+
+For a **new, empty** staging installation, generate `APP_KEY` once, store it in `.env.docker`, and preserve it on later deploys. An existing database with encrypted values requires its existing key. Build and initialize once:
+
+```bash
+cp .env.docker.example .env.docker
+# Edit .env.docker and fill DB_PASSWORD, MYSQL_ROOT_PASSWORD and the customer JWT secret.
+docker compose --env-file .env.docker build
+docker compose --env-file .env.docker run --rm --no-deps web php artisan key:generate --show
+# Copy the output into APP_KEY in .env.docker; do not generate a replacement for an existing installation.
+docker compose --env-file .env.docker up -d db
+docker compose --env-file .env.docker run --rm web php artisan migrate --force
+docker compose --env-file .env.docker up -d
+```
+
+The web container listens on `127.0.0.1:8080` by default. Put an HTTPS reverse proxy in front of it and configure trusted proxies and edge access controls for the deployment. MySQL has no published host port. Named volumes persist MySQL and application storage; do not use `docker compose down -v` unless deleting all staging data is intended. MySQL initialization settings only apply to a new volume. Back up before migrations or upgrades. For updates, build the new image, run the migration, then recreate services; do not replace `.env.docker` or `APP_KEY`.
+
+`FEEDBACK_STAFF_AUTH=disabled` leaves the staff panel unavailable until staff authentication is integrated. Configure staging JWT verification using the staging auth secret, never credentials from production. Published surveys and rules and a working mobile client are still needed for end-to-end tests.
+
 A Laravel service providing an internal Feedback API and Filament staff panel, separate from the existing Easy Gold backend. The data on this machine is **DEMO data only**. The service is not connected to the live system and has not been deployed.
 
 For the customer-facing API used directly by the mobile app, see the [App Feedback API guide (Thai)](docs/APP_FEEDBACK_API_TH.md).
@@ -94,7 +115,7 @@ The previous local data was migrated to MySQL: 28 tables and 4,353 rows, includi
 - Rating questions (`/admin/rating-questions`) have full-page create/edit screens (`/create`, `/{version}/edit`). First set the question; a table then always contains levels 5, 4, 3, 2, and 1. Editing a level opens a full-page answer-set step; select Apply answer set to return to the main page, then Save draft to save everything. Reasons can be configured separately for each rating, with options added, removed, and reordered. The allowed number of selections is set by version config (technical limit: 1–50 options), and reasons can be required or optional. An Admin Preview is available, and the API validates reasons against the rating, question, and version. See the contract in [API.md](docs/API.md).
 - Other questions (`/admin/other-questions`) displays one question per row, with status, enable/disable, edit, add/remove, and reorderable options. Changes go through draft/approval/publish while preserving rating questions and old responses.
 - Pop-up (`source=auto_prompt`) has a rating, rating-specific reasons, and an optional additional-comment field. The Feedback page (`source=always_on`) has a rating and enabled choice/text questions. The API validates answers against the same channel config used by Admin Preview, which can switch between both views.
-- Customer Service (`/admin/customer-service`) configures the Feedback entry only: status, an in-system icon, and English/Lao name and description through the existing approval/publish workflow. Other services and mobile source code are not changed.
+- Settings (`/admin/settings`) opens the Customer Service page (`/admin/customer-service`). The page shows one Feedback entry, with a modal for its status, standard icon or uploaded PNG/JPG/WebP icon (up to 1 MB), and English/Lao name and description. Save a draft, then publish it to update the app. Other services and mobile source code are not changed. Uploaded icons use the public storage disk; run `php artisan storage:link` on a non-Docker deployment and retain `storage/app/public` in backups. Docker creates the link and keeps uploaded files in the existing storage volume. Mobile clients can display the optional `customer_service.icon_url` and fall back to the existing `icon` name.
 - Rules separate the Pop-up schedule from cooldown and display the Always-On limit of three times per day as a proposal that is not yet enforced.
 - Surveys configure channels and localized title/intro/submit/cancel/thank-you text. The API adds `app_config` for the app backend to forward; see [details and limitations](docs/API.md).
 - CSV/Excel/PDF exports run through the existing queue using PhpSpreadsheet 5.11.0 and mPDF 8.3.1, added with user authorization. They require PHP gd/mbstring/zip/xml as reported by `composer check-platform-reqs`. A worker memory limit of 512M is recommended; the full test suite also uses 512M. Exports and dashboards share filters and definitions.

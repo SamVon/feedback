@@ -38,8 +38,8 @@ class ApprovalResource extends ReadOnlyResource
 
             return view('filament.partials.popup-rules', ['rules' => PopupPolicy::normalizeRules($rules), 'legacy' => ! isset($rules['transaction_rules'])]);
         })->modalSubmitAction(false)];
-        foreach (['approve', 'reject', 'publish'] as $action) {
-            $actions[] = Action::make($action)->label(__('feedback.'.$action))->visible(fn ($record) => $record->status === ($action === 'publish' ? 'approved' : 'submitted') && auth()->user()->can($action === 'publish' ? 'changes.publish' : 'changes.approve'))->requiresConfirmation()->schema($action === 'reject' ? [Textarea::make('reason')->required()->maxLength(2000)] : [])->action(fn ($record, array $data) => app(Changes::class)->transition(auth()->user(), $record->entity_type, $record->entity_id, $record->revision, $action, $data['reason'] ?? null));
+        foreach (['publish'] as $action) {
+            $actions[] = Action::make($action)->label(__('feedback.'.$action))->visible(fn ($record) => in_array($record->status, ['submitted', 'approved'], true) && auth()->user()->can($action === 'publish' ? 'changes.publish' : 'changes.approve'))->requiresConfirmation()->schema($action === 'reject' ? [Textarea::make('reason')->required()->maxLength(2000)] : [])->action(fn ($record, array $data) => app(Changes::class)->transition(auth()->user(), $record->entity_type, $record->entity_id, $record->revision, $action, $data['reason'] ?? null));
         }
 
         return $table->columns([TextColumn::make('entity_type'), TextColumn::make('entity_id')->searchable(), TextColumn::make('revision'), TextColumn::make('status')->badge(), TextColumn::make('requested_by'), TextColumn::make('reason')->wrap(), TextColumn::make('created_at')->dateTime()])->defaultSort('created_at', 'desc')->recordActions($actions);
@@ -47,6 +47,6 @@ class ApprovalResource extends ReadOnlyResource
 
     public static function getPages(): array
     {
-        return ['index' => Pages\ListApprovals::route('/')];
+        return [];
     }
 }

@@ -10,10 +10,26 @@ final class ChannelPolicy
     public static function customerService(array $rules): array
     {
         return array_replace_recursive([
-            'enabled' => true, 'icon' => 'star',
+            'enabled' => true, 'icon' => 'star', 'icon_path' => null,
             'name' => ['en' => 'Feedback & rating', 'lo' => 'ໃຫ້ດາວ ແລະ ຄຳຕິຊົມ'],
             'description' => ['en' => '', 'lo' => ''],
         ], $rules['customer_service'] ?? []);
+    }
+
+    public static function customerServiceConfig(array $rules): array
+    {
+        $service = self::customerService($rules);
+        $service['enabled'] = self::feedbackPageEnabled($rules);
+        $path = $service['icon_path'];
+        unset($service['icon_path']);
+        $service['icon_url'] = filled($path) ? asset('storage/'.$path) : null;
+
+        return $service;
+    }
+
+    public static function feedbackPageEnabled(array $rules): bool
+    {
+        return (bool) ($rules['channels']['always_on'] ?? false) && (bool) self::customerService($rules)['enabled'];
     }
 
     public static function schedule(array $rules): array

@@ -88,16 +88,17 @@ Response คง `survey` และ `rules` สำหรับ app backend เด
 }
 ```
 
-`app_config.channels` เป็นสถานะรับคำตอบ ณ เวลาอ่าน รวมสวิตช์ช่องทาง, ช่องทางของ survey, schedule สำหรับ Pop-up และสวิตช์ Customer Service สำหรับ Always-On ไม่มี staff secrets, anti-abuse rate limit หรือข้อเสนอ policy ที่ยังไม่บังคับใช้ใน projection นี้ ค่า enabled ของรายการ Customer Service เป็นการตั้งค่าของรายการเอง; app backend ต้องใช้ effective `channels.always_on` ประกอบด้วย และต้องเรียก eligibility ก่อนแสดง Pop-up เสมอ ไม่ใช้ config แทนการตรวจ actor/transaction
+`app_config.channels` เป็นสถานะรับคำตอบ ณ เวลาอ่าน รวมสวิตช์ช่องทาง, ช่องทางของ survey และ schedule สำหรับ Pop-up ไม่มี staff secrets, anti-abuse rate limit หรือข้อเสนอ policy ที่ยังไม่บังคับใช้ใน projection นี้ `customer_service.enabled` เป็นสถานะเปิดหน้า Feedback ที่รวมสวิตช์ Always-On เดิมแล้ว ส่วน `channels.always_on` ตรวจการรองรับของ survey เพิ่มด้วย แอปต้องใช้ `channels.always_on` ก่อนเปิดให้ตอบ และต้องเรียก eligibility ก่อนแสดง Pop-up เสมอ ไม่ใช้ config แทนการตรวจ actor/transaction Config ส่ง `Cache-Control: private, no-store` เพื่อให้อ่านสถานะล่าสุดทุกครั้ง
 
 `content` เก็บกับ survey version; คำถาม text ใช้เป็นความคิดเห็นเพิ่มเติมและกำหนด required/max_length ได้ การปิด/ลบคำถามทำใน draft/new version เท่านั้น Config ไม่ส่งคำถาม disabled; submission ของ version นั้นต้องไม่ส่งคำถาม disabled ด้วย IDs ของ published questions/options ไม่เปลี่ยนย้อนหลัง; การสร้าง version ใหม่ออก UUID ใหม่ โดยคง `code` เป็นรหัสอ้างอิงเชิงตรรกะ ไม่ใช้ code แทน UUID ใน submission
 
 ### Rules และ Customer Service
 
 - `popup_schedule.starts_at/ends_at`: UTC ISO 8601 (`YYYY-MM-DDTHH:MM:SSZ`) หรือ null; Admin กรอก Asia/Vientiane เริ่มรวมขอบเขต และสิ้นสุดไม่รวมขอบเขต ไม่มีค่าแปลว่าไม่จำกัดด้านนั้น ใช้หลัง publish เท่านั้น ตรวจทั้ง eligibility และส่งคำตอบใหม่ แยกจาก cooldown 30 วันหลัง commit
-- `always_on_frequency`: `{limit:3, unit:"day", status:"pending_confirmation", enforced:false}` เป็นข้อเสนอจาก mockup ที่แสดงให้ Admin ทราบ **ไม่มีตัวนับรายวัน/การบังคับใช้ใหม่**; anti-abuse ที่มีอยู่ยังทำงาน แยกจาก Pop-up
-- `customer_service`: แยกสถานะเข้าถึง Feedback จาก Auto-Prompt; `/admin/customer-service` แก้เฉพาะรายการ Feedback โดย clone กฎเดิม รักษา transaction policy และ schedule แล้วใช้ revision/approval/publish เดิม ไม่แก้รายการบริการอื่น
-- Icon รับเฉพาะชื่อ `star|chat|headset` ของ built-in icons ไม่มี upload URL/SVG ที่ผู้ใช้ส่งเอง; custom asset/upload contract ยังรอยืนยัน
+- `always_on_frequency` แสดงจำนวนคำตอบต่อวันใน Internal Config เมื่อผู้ดูแลบันทึกค่าจากแท็บ Rules ระบบตอบ `status: "active"` และ `enforced: true` กฎนับคำตอบ `always_on` ที่บันทึกสำเร็จต่อบัญชีและเริ่มนับใหม่ตอนเที่ยงคืนตามเวลาเวียงจันทน์ เมื่อครบจำนวน API ตอบ `429` พร้อม `Retry-After` การจำกัดอัตราส่งและกฎ Pop-up ใช้เงื่อนไขเดิม
+- `customer_service`: แยกสถานะเข้าถึง Feedback จาก Auto-Prompt; `/admin/settings` เปิดหน้ารายการ `/admin/customer-service` ปุ่มแก้ไขเปิด Modal สวิตช์ “ເປີດໜ້າຄຳຄິດເຫັນ” อยู่ที่นี่เพียงจุดเดียวและบันทึก `customer_service.enabled` กับ `channels.always_on` ให้ตรงกัน หน้า Rules รักษาสถานะนี้ขณะเปลี่ยน Pop-up บันทึกแบบร่างแล้วเผยแพร่จึงมีผลกับ API โดยรักษา transaction policy และ schedule ใช้ revision และขั้นตอนเผยแพร่เดิม ไม่แก้รายการบริการอื่น
+- `customer_service.icon` ยังคงเป็น `star|chat|headset` สำหรับแอปเดิม เพิ่ม `customer_service.icon_url` ใน Config เป็น URL รูปไอคอนที่เผยแพร่แล้วหรือ null แอปที่รองรับรูปให้ใช้ `icon_url` ก่อน แล้วใช้ไอคอนมาตรฐานเป็น fallback ไม่ส่ง storage path ภายในใน app config
+- เจ้าหน้าที่อัปโหลดได้เฉพาะ PNG/JPG/WebP ไม่เกิน 1 MB ผ่าน Modal ภาพอยู่บน public storage และแสดงใน Config หลังเผยแพร่ ไม่รับ URL ภายนอก/SVG หรือ path นอกโฟลเดอร์ไอคอน และไม่ลบรูปที่รุ่นเดิมยังอ้างอิง
 - เมื่อปิด Customer Service หรือช่องทาง Always-On หลัง publish คำตอบใหม่ รวมถึงฟอร์มที่เปิดค้างไว้ จะตอบ 422; ข้อมูลเก่าไม่ถูกลบ และ retry ของคำตอบที่ commit สำเร็จแล้วยังคืน receipt เดิม 200
 - เมื่อ schedule จบ การส่งคำตอบ Pop-up ใหม่จาก invitation ที่ยังไม่หมดอายุก็ถูกปฏิเสธ 422; retry ที่เคยบันทึกแล้วไม่ถูกปฏิเสธหรือเริ่ม cooldown ใหม่
 - การเปลี่ยนเวอร์ชันไม่รีเซ็ต successful-response quota ของ Pop-up; การนับบัญชี/One ID, reset หลังครบสาม, Always-On ต่อ cooldown และเวลาเริ่มใช้กฎธุรกิจใหม่ยังต้องยืนยัน
@@ -166,6 +167,12 @@ curl --fail-with-body -X POST http://127.0.0.1:8000/internal/v1/feedback/respons
 ```
 
 Replay เดิมได้ `200` กับ body เดิม แม้ invitation หมดอายุหรือ rule เปลี่ยนหลัง commit แล้ว Key เดิมแต่ payload ต่างได้ `409`; client submission เดิมของ actor/caller เดิมแต่ใช้ key ใหม่จะคืนผลเดิมถ้า payload ตรง ไม่เพิ่มคำตอบ ไม่ลบ idempotency records อัตโนมัติ
+
+Submission ไม่รับ `name` และ `phone` ใน body ทั้ง `auto_prompt` และ `always_on` หากส่งฟิลด์เหล่านี้พร้อมค่าจะได้ `422` รวมถึง internal submission endpoint
+
+Mobile API `/api/v1/feedback/responses` ใช้ `_id` จาก Customer JWT เป็น actor และอ่านชื่อจาก `first_name`/`last_name` กับเบอร์จาก `phone` หลังตรวจลายเซ็นแล้ว ชื่อ/เบอร์เป็นข้อมูลประกอบ ไม่ใช้แทน actor หรือยืนยัน KYC ข้อมูลที่ไม่มีหรือไม่ถูกต้องจะไม่ถูกบันทึก เก็บโปรไฟล์ที่ใช้ได้ใน `customer_name`/`customer_phone` แบบเข้ารหัส และไม่คืนใน receipt ข้อมูล JWT นี้แยกจาก payload hash เพื่อให้ retry เดิมทำงานได้แม้ token ต่ออายุ และไม่แก้ข้อมูลคำตอบเดิม
+
+ตาราง Customers และ Feedback ยังคงแสดงชื่อและเบอร์ภายใต้ `customer_identity.read` ข้อมูลเก่าที่เคยบันทึกไว้ยังคงอยู่ ตัวอย่าง Mobile API อยู่ใน `APP_FEEDBACK_API_TH.md`
 
 ## Auto-prompt: backend ต้องตรวจสำเร็จก่อน
 

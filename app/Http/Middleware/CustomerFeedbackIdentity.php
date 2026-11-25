@@ -33,6 +33,13 @@ final class CustomerFeedbackIdentity
         abort_unless(is_string($claims['_id'] ?? null) && trim($claims['_id']) !== '' && strlen($claims['_id']) <= 100, 401, 'Invalid customer token.');
         abort_unless(($claims['role'] ?? null) === 'CUSTOMER', 403, 'Customer role required.');
         $request->attributes->set('customer_actor', $claims['_id']);
+        $names = array_filter([$claims['first_name'] ?? null, $claims['last_name'] ?? null], static fn ($value): bool => is_string($value) && trim($value) !== '');
+        $name = implode(' ', array_map('trim', $names));
+        $phone = $claims['phone'] ?? null;
+        $request->attributes->set('customer_profile', [
+            'name' => $name !== '' && mb_strlen($name) <= 200 ? $name : null,
+            'phone' => is_string($phone) && strlen($phone) <= 40 && preg_match('/^\+?[0-9][0-9 ().-]{3,38}[0-9]$/D', $phone) ? $phone : null,
+        ]);
 
         return $next($request);
     }

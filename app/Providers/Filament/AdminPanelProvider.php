@@ -4,7 +4,7 @@ namespace App\Providers\Filament;
 
 use App\Filament\Pages\Dashboard;
 use App\Filament\Pages\FeedbackCenter;
-use App\Filament\Resources\ApprovalResource;
+use App\Filament\Pages\Settings;
 use App\Filament\Resources\AuditResource;
 use App\Filament\Resources\CustomerServiceResource;
 use App\Http\Middleware\StaffLocale;
@@ -50,18 +50,19 @@ class AdminPanelProvider extends PanelProvider
                     ...array_map(
                         fn (NavigationItem $item): NavigationItem => $item->activeWhen(fn (): bool => ! original_request()->routeIs(
                             Dashboard::getRouteName(),
-                            ApprovalResource::getRouteBaseName().'.*',
                             AuditResource::getRouteBaseName().'.*',
                             CustomerServiceResource::getRouteBaseName().'.*',
+                            Settings::getRouteName(),
                         )),
                         FeedbackCenter::getNavigationItems(),
                     ),
                 ])
                 ->groups([
                     NavigationGroup::make()->label(fn () => __('feedback.nav_administration'))->collapsible(false)->items([
-                        ...(ApprovalResource::canViewAny() ? ApprovalResource::getNavigationItems() : []),
-                        ...(AuditResource::canViewAny() ? AuditResource::getNavigationItems() : []),
-                        ...(CustomerServiceResource::canViewAny() ? CustomerServiceResource::getNavigationItems() : []),
+                        ...(Settings::canAccess() ? array_map(
+                            fn (NavigationItem $item): NavigationItem => $item->activeWhen(fn (): bool => original_request()->routeIs(Settings::getRouteName(), CustomerServiceResource::getRouteBaseName().'.*')),
+                            Settings::getNavigationItems(),
+                        ) : []),
                     ]),
                 ]))
             ->brandName('Easy Gold · Feedback')

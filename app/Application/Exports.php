@@ -6,24 +6,26 @@ use App\Jobs\BuildFeedbackExport;
 use App\Models\ExportJob;
 use App\Models\FeedbackResponse;
 use App\Models\User;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 
 final class Exports
 {
-    public function create(User $user, array $filters, string $format = 'csv'): ExportJob
+    public function create(User $user, array $filters, string $format = 'csv', ?Builder $membership = null): ExportJob
     {
         Access::check($user, 'report.export');
         Access::check($user, 'feedback.read');
         abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Unsupported export format.');
         $filters = ReportFilters::validate($filters);
 
-        return DB::transaction(function () use ($user, $filters, $format) {
+        return DB::transaction(function () use ($user, $filters, $format, $membership) {
             $job = ExportJob::create(['user_id' => $user->id, 'filters' => $filters, 'format' => $format, 'locale' => app()->getLocale(), 'snapshot_at' => now(), 'expires_at' => now()->addDay(), 'status' => 'queued']);
             // Freeze membership in one statement, so delayed/retried workers never add newer responses.
             DB::table('export_job_responses')->insertUsing(
                 ['export_job_id', 'feedback_response_id'],
-                ReportFilters::query($filters)->selectRaw('? as export_job_id, id as feedback_response_id', [$job->id]),
+                ($membership ? clone $membership : ReportFilters::query($filters))->reorder()->select([])
+                    ->selectRaw('? as export_job_id, feedback_responses.id as feedback_response_id', [$job->id]),
             );
             if ($format !== 'csv' && $user->can('analytics.read')) {
                 $members = FeedbackResponse::whereIn('id', DB::table('export_job_responses')->where('export_job_id', $job->id)->select('feedback_response_id'))->select('id');

@@ -1,0 +1,53 @@
+name: easy-gold-feedback
+
+x-app: &app
+  image: easy-gold-feedback:local
+  build:
+    context: .
+  env_file:
+    - .env.docker
+  environment:
+    DB_HOST: db
+    DB_PORT: 3306
+    DB_CONNECTION: mysql
+    LOG_CHANNEL: stderr
+  volumes:
+    - feedback-storage:/var/www/html/storage
+  depends_on:
+    db:
+      condition: service_healthy
+  restart: unless-stopped
+
+services:
+  web:
+    <<: *app
+    ports:
+      - "${FEEDBACK_BIND_ADDRESS:-127.0.0.1}:${FEEDBACK_HTTP_PORT:-8080}:80"
+  worker:
+    <<: *app
+    user: www-data
+    command: ["php", "-d", "memory_limit=512M", "artisan", "queue:work", "--sleep=3", "--tries=3", "--timeout=120"]
+  scheduler:
+    <<: *app
+    user: www-data
+    command: ["php", "artisan", "schedule:work"]
+  db:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:?Set DB_DATABASE in .env.docker}
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME in .env.docker}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD in .env.docker}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Set MYSQL_ROOT_PASSWORD in .env.docker}
+    volumes:
+      - feedback-mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    restart: unless-stopped
+
+volumes:
+  feedback-mysql:
+  feedback-storage:

@@ -48,7 +48,7 @@ class SurveyResource extends ReadOnlyResource
             })->modalSubmitAction(false),
             Action::make('editDraft')->label(__('feedback.edit_draft'))->visible(fn ($record) => $record->status === 'draft' && auth()->user()->can('survey.edit'))->fillForm(fn ($record) => SurveyFields::data($record))->schema(static::fields())->action(fn ($record, array $data) => app(Changes::class)->surveyDraft(auth()->user(), $data, $record->id, (int) $data['revision'])),
             Action::make('newVersion')->label(__('feedback.new_version'))->visible(fn () => auth()->user()->can('survey.edit'))->fillForm(fn ($record) => SurveyFields::data($record))->schema(static::fields())->action(fn (array $data) => app(Changes::class)->surveyDraft(auth()->user(), $data)),
-            Action::make('submit')->label(__('feedback.submit'))->visible(fn ($record) => $record->status === 'draft' && auth()->user()->can('survey.edit'))->fillForm(fn ($record) => ['revision' => $record->revision])->schema([Hidden::make('revision')])->requiresConfirmation()->action(fn ($record, array $data) => app(Changes::class)->transition(auth()->user(), 'survey', $record->id, (int) $data['revision'], 'submit')),
+            Action::make('publish')->label(__('feedback.publish'))->visible(fn ($record) => in_array($record->status, ['draft', 'submitted', 'approved'], true) && auth()->user()->can('changes.publish'))->fillForm(fn ($record) => ['revision' => $record->revision])->schema([Hidden::make('revision')])->requiresConfirmation()->action(fn ($record, array $data) => app(Changes::class)->transition(auth()->user(), 'survey', $record->id, (int) $data['revision'], 'publish')),
         ]);
     }
 

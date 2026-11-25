@@ -11,6 +11,13 @@ final class PopupPolicy
 
     public const COOLDOWN_DAYS = 30;
 
+    public const CUSTOMER_TRANSACTION_TYPES = ['BUY_GOLD', 'SALE_GOLD'];
+
+    public static function unlimitedForTesting(): bool
+    {
+        return config('feedback.test_unlimited_popup') === true && app()->environment(['local', 'testing', 'staging']);
+    }
+
     /** Published legacy JSON remains immutable; expose the confirmed policy without rewriting it. */
     public static function normalizeRules(array $rules): array
     {
@@ -39,19 +46,20 @@ final class PopupPolicy
      */
     public function state(string $actor, string $type, array $rules): array
     {
+        $unlimited = self::unlimitedForTesting();
         $row = collect(self::normalizeRules($rules)['transaction_rules'])->firstWhere('transaction_type', $type);
         $aggregate = FeedbackResponse::where('actor_user_id', $actor)
             ->where('source', 'auto_prompt')
             ->whereHas('context', fn ($query) => $query->where('transaction_type', $type))
             ->selectRaw('COUNT(*) as total, MAX(received_at) as last_received_at')->first();
         $count = (int) $aggregate->total;
-        $cooldownUntil = $aggregate->last_received_at
+        $cooldownUntil = ! $unlimited && $aggregate->last_received_at
             ? CarbonImmutable::parse($aggregate->last_received_at, 'UTC')->addDays(self::COOLDOWN_DAYS)
             : null;
         $reason = match (true) {
             ! ($rules['channels']['auto_prompt'] ?? false), ! ($row['enabled'] ?? false) => 'trigger_disabled',
             ! ChannelPolicy::popupOpen($rules) => 'outside_schedule',
-            $count >= self::MAX_RESPONSES => 'response_limit_reached',
+            ! $unlimited && $count >= self::MAX_RESPONSES => 'response_limit_reached',
             $cooldownUntil?->isFuture() === true => 'cooldown_active',
             default => null,
         };
@@ -61,11 +69,12 @@ final class PopupPolicy
             'reason' => $reason,
             'transaction_type' => $type,
             'successful_response_count' => $count,
-            'max_responses' => self::MAX_RESPONSES,
-            'remaining_responses' => max(0, self::MAX_RESPONSES - $count),
-            'cooldown_days' => self::COOLDOWN_DAYS,
+            'max_responses' => $unlimited ? null : self::MAX_RESPONSES,
+            'remaining_responses' => $unlimited ? null : max(0, self::MAX_RESPONSES - $count),
+            'cooldown_days' => $unlimited ? 0 : self::COOLDOWN_DAYS,
             'cooldown_until' => $cooldownUntil?->format('Y-m-d\TH:i:s\Z'),
-            'reset_policy' => 'pending_confirmation',
+            'reset_policy' => $unlimited ? 'unlimited_for_testing' : 'pending_confirmation',
+            'limits_enforced' => ! $unlimited,
         ];
     }
 }

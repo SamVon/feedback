@@ -5,9 +5,10 @@ body { color: #263238; font-family: dhyana; } h1 { color: #9e3030; font-size: 22
 </style>
 <h1>EASY GOLD · {{ $t('reports') }}</h1>
 <p>{{ $t('snapshot_at') }}: {{ $job->snapshot_at->setTimezone('Asia/Vientiane')->format('d/m/Y H:i:s') }} · Asia/Vientiane · received_at</p>
-<p class="muted">@foreach($job->filters as $key => $value) {{ $key }}: {{ $value }} · @endforeach</p>
+<p class="muted">@foreach(\Illuminate\Support\Arr::except($job->filters, ['exclude_demo', 'default_rating_question']) as $key => $value) {{ $key }}: {{ $value }} · @endforeach</p>
 @if($job->summary)
 @php($m = $job->summary)
+@isset($m['rating_question_label'])<p>{{ $m['rating_question_survey'] }} · {{ $m['rating_question_label'] }}</p>@endisset
 <table><tr><th>{{ $t('average') }}</th><th>CSAT</th><th>{{ $t('responses') }}</th><th>{{ $t('unique_customers') }}</th></tr><tr>
 <td class="metric">{{ $m['average'] ?? $t('no_data') }}</td><td class="metric">{{ $m['csat'] === null ? $t('no_data') : $m['csat'].'%' }}</td><td class="metric">{{ $m['response_count'] }}</td><td class="metric">{{ $m['unique_customers'] }}</td></tr></table>
 <p>{{ $t('csat_hint') }} · {{ $t('ratings') }}: {{ $m['rating_count'] }}</p>

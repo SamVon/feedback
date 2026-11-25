@@ -8,8 +8,10 @@ use App\Application\Invitations;
 use App\Application\PopupPolicy;
 use App\Application\SubmitFeedback;
 use App\Application\SurveyPresentation;
+use App\Models\DailyFeedbackLimit;
 use App\Models\FeedbackResponse;
 use App\Models\RuleVersion;
+use App\Models\Survey;
 use App\Models\SurveyVersion;
 use Illuminate\Http\Request;
 
@@ -25,10 +27,19 @@ final class FeedbackController
         return $this->reply($service->execute($r->attributes->get('service_caller'), $r->header('Idempotency-Key', ''), $r->all()));
     }
 
-    public function config(Request $r)
+    public function config(Request $r, bool $allowLatest = false)
     {
-        $r->validate(['survey_code' => 'required|string|max:100', 'source' => 'sometimes|in:auto_prompt,always_on']);
-        $version = SurveyVersion::with('questions.options')->whereHas('survey', fn ($q) => $q->where('code', $r->input('survey_code')))->where('status', 'published')->orderByDesc('version')->firstOrFail();
+        $r->validate(['survey_code' => ($allowLatest ? 'sometimes' : 'required').'|string|max:100', 'source' => 'sometimes|in:auto_prompt,always_on']);
+        $query = SurveyVersion::with(['questions.options', 'survey'])->where('status', 'published');
+        if ($r->filled('survey_code')) {
+            $version = $query->whereHas('survey', fn ($q) => $q->where('code', $r->input('survey_code')))->orderByDesc('version')->firstOrFail();
+        } else {
+            $source = $r->input('source', 'always_on');
+            $version = $query->orderByDesc(Survey::select('created_at')->whereColumn('surveys.id', 'survey_versions.survey_id'))
+                ->orderByDesc('survey_id')->orderByDesc('version')->get()->unique('survey_id')
+                ->first(fn ($candidate) => ChannelPolicy::surveySupports($candidate, $source));
+            abort_unless($version, 404);
+        }
 
         if ($r->filled('source')) {
             abort_unless(ChannelPolicy::surveySupports($version, $r->input('source')), 404);
@@ -42,18 +53,20 @@ final class FeedbackController
         $survey['questions'] = $version->questions->map(fn ($question) => SurveyPresentation::question($question))->all();
 
         $rules = PopupPolicy::normalizeRules(RuleVersion::where('status', 'published')->orderByDesc('version')->first()?->rules ?? []);
-        $customerService = ChannelPolicy::customerService($rules);
+        if (! $allowLatest && ($limit = DailyFeedbackLimit::current())) {
+            $rules['always_on_frequency'] = ['limit' => $limit->response_limit, 'unit' => 'day', 'status' => 'active', 'enforced' => true];
+        }
         $channels = [
             'auto_prompt' => ($rules['channels']['auto_prompt'] ?? false) && $hasPopupQuestions && ChannelPolicy::popupOpen($rules) && ChannelPolicy::surveySupports($version, 'auto_prompt'),
-            'always_on' => ($rules['channels']['always_on'] ?? false) && $customerService['enabled'] && ChannelPolicy::surveySupports($version, 'always_on'),
+            'always_on' => ChannelPolicy::feedbackPageEnabled($rules) && ChannelPolicy::surveySupports($version, 'always_on'),
         ];
 
         return response()->json(['survey' => $survey, 'rules' => $rules, 'app_config' => [
             'source' => $source, 'survey_code' => $version->survey->code, 'survey_version' => $version->version,
             'published_at' => $version->published_at?->utc()->format('Y-m-d\TH:i:s\Z'), 'rating_levels' => [5, 4, 3, 2, 1],
             'survey_version_id' => $version->id, 'channels' => $channels, 'content' => $survey['content'],
-            'questions' => $survey['questions'], 'customer_service' => $customerService, 'popup_schedule' => ChannelPolicy::schedule($rules),
-        ]])->header('Cache-Control', 'private, max-age=60');
+            'questions' => $survey['questions'], 'customer_service' => ChannelPolicy::customerServiceConfig($rules), 'popup_schedule' => ChannelPolicy::schedule($rules),
+        ]])->header('Cache-Control', 'private, no-store');
     }
 
     public function read(Request $r, string $id)

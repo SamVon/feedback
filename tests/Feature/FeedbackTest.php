@@ -11,11 +11,9 @@ use App\Application\Invitations;
 use App\Application\PopupPolicy;
 use App\Application\ReportFilters;
 use App\Filament\Pages\Dashboard;
-use App\Filament\Resources\Pages\ListApprovals;
 use App\Filament\Resources\Pages\ListSurveys;
 use App\Filament\Widgets\Metrics;
 use App\Jobs\BuildFeedbackExport;
-use App\Models\ChangeRequest;
 use App\Models\CohortMember;
 use App\Models\FeedbackAnswer;
 use App\Models\FeedbackResponse;
@@ -258,7 +256,7 @@ class FeedbackTest extends TestCase
     {
         $viewer = User::factory()->create(['active' => true, 'permissions' => []]);
         $this->actingAs($viewer);
-        foreach (['/admin', '/admin/rating-questions', '/admin/feedback', '/admin/customers', '/admin/surveys', '/admin/rules', '/admin/approvals', '/admin/reports', '/admin/audits'] as $url) {
+        foreach (['/admin', '/admin/rating-questions', '/admin/feedback', '/admin/customers', '/admin/surveys', '/admin/rules', '/admin/reports', '/admin/audits'] as $url) {
             $this->get($url)->assertForbidden();
         }
         foreach ([
@@ -314,7 +312,7 @@ class FeedbackTest extends TestCase
         $this->actingAs($this->staff);
         foreach (['en', 'lo'] as $locale) {
             $this->withSession(['feedback_locale' => $locale]);
-            foreach (['/admin', '/admin/rating-questions', '/admin/feedback-center', '/admin/feedback', '/admin/customers', '/admin/surveys', '/admin/rules', '/admin/approvals', '/admin/reports', '/admin/audits'] as $url) {
+            foreach (['/admin', '/admin/rating-questions', '/admin/feedback-center', '/admin/feedback', '/admin/customers', '/admin/surveys', '/admin/rules', '/admin/reports', '/admin/audits'] as $url) {
                 $this->get($url)->assertOk();
             }
         }
@@ -332,13 +330,7 @@ class FeedbackTest extends TestCase
         $draft = SurveyVersion::where('status', 'draft')->firstOrFail();
         $this->assertSame(2, $draft->version);
         Livewire::test(ListSurveys::class)
-            ->callTableAction('submit', $draft, data: ['revision' => 1])->assertHasNoActionErrors();
-        $this->assertSame('submitted', $draft->fresh()->status);
-        $change = ChangeRequest::where('entity_id', $draft->id)->firstOrFail();
-        Livewire::test(ListApprovals::class)
-            ->callTableAction('approve', $change)->assertHasNoActionErrors();
-        Livewire::test(ListApprovals::class)
-            ->callTableAction('publish', $change->fresh())->assertHasNoActionErrors();
+            ->callTableAction('publish', $draft, data: ['revision' => 1])->assertHasNoActionErrors();
         $this->assertSame('published', $draft->fresh()->status);
     }
 

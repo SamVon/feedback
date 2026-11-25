@@ -10,7 +10,9 @@ use App\Models\Survey;
 use App\Models\SurveyVersion;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Validation\ValidationException;
 
 final class Changes
 {
@@ -116,9 +118,10 @@ final class Changes
             'always_on_frequency.unit' => 'required_with:always_on_frequency|in:day',
             'always_on_frequency.status' => 'required_with:always_on_frequency|in:pending_confirmation',
             'always_on_frequency.enforced' => 'sometimes|required_with:always_on_frequency|boolean|declined',
-            'customer_service' => 'sometimes|array:enabled,icon,name,description',
+            'customer_service' => 'sometimes|array:enabled,icon,icon_path,name,description',
             'customer_service.enabled' => 'required_with:customer_service|boolean',
             'customer_service.icon' => 'required_with:customer_service|in:star,chat,headset',
+            'customer_service.icon_path' => ['sometimes', 'nullable', 'string', 'max:240', 'regex:/\Acustomer-service-icons\/[A-Za-z0-9_-]+\.(?:png|jpe?g|webp)\z/i'],
             'customer_service.name' => 'required_with:customer_service|array:en,lo',
             'customer_service.name.*' => 'required|string|max:100',
             'customer_service.name.en' => 'required_with:customer_service', 'customer_service.name.lo' => 'required_with:customer_service',
@@ -127,6 +130,14 @@ final class Changes
             'transaction_types' => 'prohibited', 'cooldown_seconds' => 'prohibited', 'rate_limit' => 'required|integer|between:1,1000',
             'rate_window_seconds' => 'required|integer|between:60,86400', 'invitation_ttl_seconds' => 'required|integer|between:60,604800',
         ])->validate();
+
+        if (filled($rules['customer_service']['icon_path'] ?? null)) {
+            $path = $rules['customer_service']['icon_path'];
+            $disk = Storage::disk('public');
+            if (! $disk->exists($path) || $disk->size($path) > 1048576 || ! in_array($disk->mimeType($path), ['image/png', 'image/jpeg', 'image/webp'], true)) {
+                throw ValidationException::withMessages(['customer_service.icon_path' => __('feedback.customer_service_icon_invalid')]);
+            }
+        }
 
         $schedule = ChannelPolicy::schedule($rules);
         abort_if($schedule['starts_at'] && $schedule['ends_at'] && $schedule['ends_at'] <= $schedule['starts_at'], 422, 'Schedule end must be after start.');
@@ -165,15 +176,18 @@ final class Changes
             $model = $type === 'survey' ? SurveyVersion::class : RuleVersion::class;
             $version = $model::lockForUpdate()->findOrFail($id);
             abort_unless($version->revision === $revision, 409, 'Revision changed; reload.');
-            $expected = match ($action) {
-                'submit' => 'draft','approve','reject' => 'submitted','publish' => 'approved'
+            $expected = $version->status;
+            $allowed = match ($action) {
+                'submit' => ['draft'], 'approve', 'reject' => ['submitted'], 'publish' => ['draft', 'submitted', 'approved'],
             };
-            abort_unless($version->status === $expected, 409, 'Invalid transition.');
+            abort_unless(in_array($expected, $allowed, true), 409, 'Invalid transition.');
             if ($action === 'submit') {
                 ChangeRequest::create(['entity_type' => $type, 'entity_id' => $id, 'revision' => $revision, 'status' => 'submitted', 'requested_by' => $user->id]);
+            } elseif ($action === 'publish' && $expected === 'draft') {
+                ChangeRequest::create(['entity_type' => $type, 'entity_id' => $id, 'revision' => $revision, 'status' => 'published', 'requested_by' => $user->id]);
             } else {
                 $request = ChangeRequest::where('entity_type', $type)->where('entity_id', $id)->where('revision', $revision)->latest()->lockForUpdate()->firstOrFail();
-                abort_unless($request->status === ($action === 'publish' ? 'approved' : 'submitted'), 409, 'Approval no longer valid.');
+                abort_unless($request->status === $expected, 409, 'Change request no longer valid.');
                 $request->update(['status' => $action === 'publish' ? 'published' : ($action === 'approve' ? 'approved' : 'rejected'), 'reviewed_by' => $action === 'publish' ? $request->reviewed_by : $user->id, 'reason' => $reason ?? $request->reason]);
             }
             $status = match ($action) {

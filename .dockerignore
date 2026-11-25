@@ -1,0 +1,16 @@
+.git
+.env
+.env.*
+!.env.example
+.local-feedback-*
+auth.json
+vendor
+node_modules
+storage/*
+!storage/.gitignore
+bootstrap/cache/*.php
+public/hot
+public/storage
+tmp
+*.log
+.phpunit.result.cache

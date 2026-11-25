@@ -15,33 +15,41 @@ use Filament\Schemas\Components\Section;
 use Filament\Schemas\Components\Utilities\Get;
 use Filament\Schemas\Components\Utilities\Set;
 use Filament\Schemas\Schema;
+use Filament\Support\Components\Attributes\Unexposed;
 use Illuminate\Support\Collection;
 
 class Dashboard extends \Filament\Pages\Dashboard
 {
-    use HasFiltersForm;
+    use HasFiltersForm {
+        getFiltersSessionKey as private baseFiltersSessionKey;
+    }
 
     protected string $view = 'filament.pages.dashboard';
 
     public function summary(): array
     {
-        return app(Analytics::class)->summary(auth()->user(), $this->filters ?? []);
+        return app(Analytics::class)->summary(auth()->user(), $this->dataFilters());
     }
 
     public function choiceSummary(): array
     {
-        $filters = $this->filters ?? [];
-        $question = Question::where('survey_version_id', $filters['survey_version_id'] ?? null)->where('type', 'choice')->orderBy('position')->first();
+        $filters = $this->dataFilters();
+        $analytics = app(Analytics::class);
+        $responses = ReportFilters::query($filters);
+        $question = isset($filters['question_id']) ? Question::where('type', 'choice')->find($filters['question_id']) : null;
+        $question ??= $analytics->latestAnsweredQuestion($responses, 'choice');
 
         if (! $question) {
             return [];
         }
 
-        $members = ReportFilters::query($filters)->select('id');
         $filters['question_id'] = $question->id;
         unset($filters['rating']);
 
-        return app(Analytics::class)->summary(auth()->user(), $filters, $members)['choices'];
+        return [
+            'question' => $question->label[app()->getLocale()] ?? $question->label['en'],
+            'options' => $analytics->summary(auth()->user(), $filters, $responses->select('id'))['choices'],
+        ];
     }
 
     public function recentFeedback(): Collection
@@ -50,17 +58,20 @@ class Dashboard extends \Filament\Pages\Dashboard
             return collect();
         }
 
-        return ReportFilters::query($this->filters ?? [])
+        return ReportFilters::query($this->dataFilters())
             ->whereHas('answers', fn ($query) => $query->whereNotNull('text_value')->where('text_value', '!=', ''))
             ->with('answers.question')->latest('received_at')->limit(3)->get();
     }
 
-    public function mount(): void
+    public function dataFilters(): array
     {
-        if (! isset($this->filters['survey_version_id'])) {
-            $this->filters = array_replace(ReportFilters::defaults(), array_filter($this->filters ?? [], fn ($v) => $v !== null && $v !== ''));
-            $this->getFiltersForm()->fill($this->filters);
-        }
+        return ['exclude_demo' => true, 'default_rating_question' => true] + ($this->filters ?? []);
+    }
+
+    #[Unexposed]
+    public function getFiltersSessionKey(): string
+    {
+        return $this->baseFiltersSessionKey().'.all-responses';
     }
 
     public static function canAccess(): bool
@@ -98,12 +109,12 @@ class Dashboard extends \Filament\Pages\Dashboard
         }
 
         return $schema->columns(['default' => 1, 'md' => 2])->components([
-            $fields[0]->maxDate(fn (Get $get) => $get('until'))->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+            $fields[0]->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
                 if ($state && $get('until') && $state > $get('until')) {
                     $set('until', $state);
                 }
             }),
-            $fields[1]->minDate(fn (Get $get) => $get('from'))->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
+            $fields[1]->afterStateUpdated(function (?string $state, Get $get, Set $set): void {
                 if ($state && $get('from') && $state < $get('from')) {
                     $set('from', $state);
                 }
@@ -116,7 +127,7 @@ class Dashboard extends \Filament\Pages\Dashboard
     protected function getHeaderActions(): array
     {
         return [Action::make('exportPdf')->label('Export PDF')->outlined()->visible(fn () => auth()->user()->can('report.export') && auth()->user()->can('feedback.read'))->action(function (): void {
-            app(Exports::class)->create(auth()->user(), $this->filters ?? [], 'pdf');
+            app(Exports::class)->create(auth()->user(), $this->dataFilters(), 'pdf');
             Notification::make()->title(__('feedback.export_queued'))->success()->send();
         }), Action::make('exports')->label(__('feedback.reports'))->url(Reports::getUrl())->visible(fn () => Reports::canAccess())];
     }

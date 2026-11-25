@@ -35,3 +35,6 @@ Thumbs.db
 
 # Temporary PDF renders and extracted assets
 /tmp/pdfs/
+
+# Docker staging secrets
+.env.docker
