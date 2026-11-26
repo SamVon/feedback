@@ -273,7 +273,7 @@ class PopupPolicyTest extends TestCase
         $this->eligibility('SALE_GOLD', 'sale')->assertOk()->assertJsonPath('reason', 'trigger_disabled');
         foreach (['en', 'lo'] as $locale) {
             app()->setLocale($locale);
-            Livewire::test(ListRules::class)->mountTableAction('details', $draft->fresh())->assertMountedActionModalSee([__('feedback.popup_reset_hint'), __('feedback.popup_policy_hint')]);
+            Livewire::test(ListRules::class)->mountTableAction('details', $draft->fresh())->assertMountedActionModalSee([__('feedback.rules_detail_note'), __('feedback.rules_detail_limit'), __('feedback.rules_detail_cooldown')]);
         }
         $rules['transaction_rules'][0]['max_responses'] = 4;
         $this->expectException(ValidationException::class);
