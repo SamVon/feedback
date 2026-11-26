@@ -10,6 +10,7 @@
     color: white;
 }
 .fi-body-has-topbar .fi-sidebar-header {
+    position: relative;
     display: flex;
     height: 168px;
     background: transparent;
@@ -33,7 +34,7 @@
 .fi-sidebar .fi-sidebar-item-label { color: white; font-weight: 400; font-size: 14px; }
 .fi-sidebar .fi-sidebar-item-btn > .fi-icon { color: white; width: 20px; height: 20px; }
 .fi-sidebar .fi-sidebar-item-btn:hover { background: #ffffff14; }
-.fi-sidebar .fi-sidebar-item-btn:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.fi-sidebar .fi-sidebar-item-btn:focus-visible { background: #ffffff14; outline: 2px solid #fff; outline-offset: 2px; }
 .fi-sidebar .fi-sidebar-item.fi-active > .fi-sidebar-item-btn {
     background: linear-gradient(110deg, #e8b12c, #f1c43d);
     box-shadow: inset 0 1px 0 #ffffff25;
@@ -42,6 +43,11 @@
 .fi-sidebar .fi-sidebar-item.fi-active .fi-icon { color: #3c3016; font-weight: 600; }
 .fi-topbar { min-height: 68px; background: white; border-bottom: 1px solid #dedede; box-shadow: 0 1px 3px #00000006; padding-inline: 24px; }
 .fi-topbar-start { display: none; }
+.eg-sidebar-mark { display: flex; align-items: center; justify-content: center; flex-shrink: 0; border-radius: 10px; }
+.eg-sidebar-mark:focus-visible { outline: 2px solid white; outline-offset: 4px; }
+.eg-sidebar-mobile-close { position: absolute; top: 12px; right: 12px; }
+.eg-sidebar-mobile-close .fi-icon { color: white; }
+.eg-sidebar-mobile-close:hover, .eg-sidebar-mobile-close:focus-visible { background: #ffffff14; outline-color: white; }
 .eg-account-bar { margin-left: auto; display: flex; align-items: center; gap: 16px; min-width: 0; }
 .eg-locale { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #777; }
 .eg-locale a { padding: 6px 2px; }
@@ -74,6 +80,14 @@
 @media (min-width: 1024px) {
     .fi-body-has-navigation .fi-topbar-ctn { margin-left: var(--sidebar-width); }
     .fi-body-has-navigation .fi-sidebar { margin-top: -68px; top: 0; height: 100dvh; z-index: 40; }
+    .fi-topbar-start { display: flex; }
+    .fi-topbar-start > a, .fi-topbar-start > .fi-logo { display: none; }
+    .fi-body-has-navigation:has(.fi-main-sidebar:not(.fi-sidebar-open)) .fi-topbar-ctn { margin-left: var(--sidebar-collapsed-width); }
+    .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-header { height: 68px; padding: 12px 10px; }
+    .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav { padding: 0 8px 24px; scrollbar-gutter: auto; }
+    .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-nav-groups { width: 100%; max-width: 44px; margin-inline: auto; }
+    .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-item-btn { justify-content: center; gap: 0; padding: 10px; }
+    .fi-sidebar:not(.fi-sidebar-open) .fi-sidebar-group { padding-top: 12px; }
 }
 @media (max-width: 1279px) {
     .eg-menu-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px; }

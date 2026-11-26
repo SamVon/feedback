@@ -20,7 +20,7 @@
                 <label class="eg-customer-keyword">
                     <span>{{ __('feedback.customer_search') }}</span>
                     <x-filament::input.wrapper>
-                        <x-filament::input wire:model.live.debounce.400ms="tableSearch" maxlength="100" :placeholder="__('feedback.customer_search_id')" />
+                        <x-filament::input wire:model.live.debounce.400ms="tableSearch" maxlength="100" :placeholder="__('feedback.customer_search_phone')" />
                     </x-filament::input.wrapper>
                 </label>
                 {{ $this->filtersForm }}

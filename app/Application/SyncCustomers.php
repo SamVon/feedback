@@ -5,10 +5,12 @@ namespace App\Application;
 use Closure;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Sleep;
 
 final class SyncCustomers
 {
@@ -68,6 +70,9 @@ final class SyncCustomers
     public function check(bool $needsUserService = true): array
     {
         $settings = config('feedback.customer_sync');
+        if ($needsUserService && ! ($settings['live_enabled'] ?? false)) {
+            throw new CustomerSyncException('Live User Service sync is disabled. Use --snapshot-file or explicitly enable FEEDBACK_USER_SERVICE_SYNC_ENABLED.');
+        }
         $environment = $settings['environment'];
         $required = [
             'environment' => 'FEEDBACK_CUSTOMER_SOURCE_ENVIRONMENT',
@@ -136,13 +141,15 @@ final class SyncCustomers
             }
             $progress?->__invoke('Resuming source read at pass '.($firstPass + 1).', offset '.$firstOffset.'.');
         }
-        foreach (['created_at', 'updated_at', 'last_kyc_updated_at'] as $pass => $order) {
+        $maxPasses = max(1, min(3, (int) ($settings['max_passes'] ?? 1)));
+        $orders = array_slice(['created_at', 'updated_at', 'last_kyc_updated_at'], 0, $maxPasses);
+        foreach ($orders as $pass => $order) {
             if ($pass < $firstPass) {
                 continue;
             }
             $offset = $pass === $firstPass ? $firstOffset : 0;
             $pages = 0;
-            $progress?->__invoke('Reading User Service: pass '.($pass + 1).'/3 ('.$order.').');
+            $progress?->__invoke('Reading User Service: pass '.($pass + 1).'/'.$maxPasses.' ('.$order.').');
             while ($total === null || $offset < $total) {
                 [$pageMembers, $scanned] = $this->readPage($settings, $offset, 500, $order, $total, $allowPartial, $recoveries);
                 foreach ($pageMembers as $member) {
@@ -182,20 +189,30 @@ final class SyncCustomers
         }
 
         $disk->deleteDirectory($checkpoint);
-        throw new CustomerSyncException('User Service returned only '.count($members).' distinct accounts out of '.$total.' after three read passes. Previous customer data is unchanged.');
+        throw new CustomerSyncException('User Service returned only '.count($members).' distinct accounts out of '.$total.' after '.$maxPasses.' read pass(es). Previous customer data is unchanged.');
     }
 
     /** @return array{0: array, 1: int} */
     private function readPage(array $settings, int $offset, int $limit, string $order, ?int &$total, bool $allowPartial, int &$recoveries): array
     {
+        $cooldownKey = 'feedback:user-service:cooldown:'.hash('sha256', rtrim($settings['user_url'], '/'));
+        if (Cache::has($cooldownKey)) {
+            throw new CustomerSyncException('User Service sync is cooling down after an upstream failure. Wait before resuming this run.');
+        }
+        Sleep::for(max(1000, min(60000, (int) ($settings['request_interval_ms'] ?? 1000))))->milliseconds();
         try {
             $response = Http::acceptJson()->withToken($settings['user_token'])->timeout(30)->withoutRedirecting()
-                ->retry([250, 1000], when: fn ($exception): bool => $exception instanceof ConnectionException
-                    || ($exception instanceof RequestException && $exception->response->serverError()
-                        && ! str_contains(strtolower((string) $exception->response->json('msg')), 'decod')), throw: false)
                 ->get(rtrim($settings['user_url'], '/').'/user-service/api/v1/user/', [
                     'role' => 'CUSTOMER', 'limit' => $limit, 'skip' => $offset, 'order_by' => $order,
                 ]);
+            $decodeError = $response->status() === 500 && str_contains(strtolower((string) $response->json('msg')), 'decod');
+            if ($response->status() === 429 || ($response->serverError() && ! $decodeError)) {
+                $retryAfter = (string) $response->header('Retry-After');
+                $seconds = ctype_digit($retryAfter)
+                    ? (int) $retryAfter
+                    : max(0, (strtotime($retryAfter) ?: 0) - now()->timestamp);
+                Cache::put($cooldownKey, true, now()->addSeconds(max(60, min(86400, $seconds))));
+            }
             if ($allowPartial && $response->status() === 500 && str_contains(strtolower((string) $response->json('msg')), 'decod')) {
                 $recoveries++;
                 if ($recoveries > 128) {
@@ -212,6 +229,7 @@ final class SyncCustomers
             }
             $response->throw();
         } catch (ConnectionException) {
+            Cache::put($cooldownKey, true, now()->addSeconds(60));
             throw new CustomerSyncException('User Service connection failed. Check USER_SERVICE_BASE_URL, DNS and TLS connectivity.');
         } catch (RequestException $exception) {
             throw $this->httpError('User Service', $exception->response->status());

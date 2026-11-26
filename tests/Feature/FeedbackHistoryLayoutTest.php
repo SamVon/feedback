@@ -55,21 +55,22 @@ class FeedbackHistoryLayoutTest extends FeedbackTest
         return [FeedbackResponse::findOrFail($a), FeedbackResponse::findOrFail($b), FeedbackResponse::findOrFail($c)];
     }
 
-    public function test_history_layout_keeps_each_submission_and_filters_source_rating_dates_and_advanced_fields(): void
+    public function test_history_layout_only_shows_form_submissions_and_filters_rating_dates_and_advanced_fields(): void
     {
         [$a, $b, $popup] = $this->history();
         $this->actingAs($this->staff);
         $this->withSession(['feedback_locale' => 'lo'])->get(FeedbackResource::getUrl())->assertOk()
             ->assertSee('ປະຫວັດໃຫ້ຄະແນນ ແລະ ຄຳຄິດເຫັນ');
-        $page = Livewire::test(ListFeedback::class)->assertCanSeeTableRecords([$a, $b, $popup])->assertSee('4 / 5')->assertSee('5 / 5')
+        $page = Livewire::test(ListFeedback::class)->assertCanSeeTableRecords([$a, $b])->assertCanNotSeeTableRecords([$popup])->assertSee('4 / 5')->assertSee('5 / 5')
             ->assertSee('Private history name')->assertSee('02000123456');
-        $page->set('filters.rating', 5)->assertCanSeeTableRecords([$a, $popup])->assertCanNotSeeTableRecords([$b]);
-        $page->set('filters.rating', null)->call('setFeedbackSource', 'always_on')
+        $page->set('filters.rating', 5)->assertCanSeeTableRecords([$a])->assertCanNotSeeTableRecords([$b, $popup]);
+        $page->set('filters.rating', null)->set('filters.source', 'auto_prompt')
             ->assertCanSeeTableRecords([$a, $b])->assertCanNotSeeTableRecords([$popup]);
-        $page->call('setFeedbackSource', 'auto_prompt')->assertCanSeeTableRecords([$popup])->assertCanNotSeeTableRecords([$a, $b]);
-        $page->call('setFeedbackSource', '')->set('filters.os', 'ios')->assertCanSeeTableRecords([$a])->assertCanNotSeeTableRecords([$b, $popup]);
-        $page->set('filters.os', null)->set('tableSearch', 'history-a')->assertCanSeeTableRecords([$a, $b])->assertCanNotSeeTableRecords([$popup]);
-        $page->set('tableSearch', '')->set('filters.transaction_type', 'BUY_GOLD')->assertCanSeeTableRecords([$popup])->assertCanNotSeeTableRecords([$a, $b]);
+        $this->assertSame('always_on', $page->instance()->dataFilters()['source']);
+        $page->set('filters.os', 'ios')->assertCanSeeTableRecords([$a])->assertCanNotSeeTableRecords([$b, $popup]);
+        $page->set('filters.os', null)->set('tableSearch', '020 0012-3456')->assertCanSeeTableRecords([$a])->assertCanNotSeeTableRecords([$b, $popup]);
+        $page->set('tableSearch', 'history-a')->assertCanNotSeeTableRecords([$a, $b, $popup]);
+        $page->set('tableSearch', '')->set('filters.transaction_type', 'BUY_GOLD')->assertCanNotSeeTableRecords([$a, $b, $popup]);
         $page->set('filters.transaction_type', null)->set('filters.from', now()->addDay()->toDateString())->assertHasErrors('filters.until')
             ->set('filters.until', now()->addDay()->toDateString())->assertCanNotSeeTableRecords([$a, $b, $popup]);
     }
@@ -78,15 +79,15 @@ class FeedbackHistoryLayoutTest extends FeedbackTest
     {
         [$a, $b] = $this->history();
         $this->actingAs($this->staff);
-        $page = Livewire::test(ListFeedback::class)->set('tableSearch', 'history-a')->set('filters.rating', 5);
+        $page = Livewire::test(ListFeedback::class)->set('tableSearch', '020 0012-3456')->set('filters.rating', 5);
         $url = $page->instance()->getTable()->getAction('details')->record($a)->getUrl();
         $this->assertStringContainsString('/admin/feedback/'.$a->id, $url);
-        $this->assertStringContainsString('search=history-a', $url);
+        $this->assertStringContainsString('search=020%200012-3456', $url);
         $this->assertSame($url, $page->instance()->getTable()->getRecordUrl($a));
 
         $this->get($url)->assertOk()->assertSee('Private history name')->assertSee('02000123456')->assertSee('5 / 5')
             ->assertSee('&lt;script&gt;first-history-comment&lt;/script&gt;', false)->assertDontSee('<script>first-history-comment</script>', false)
-            ->assertSee('search=history-a', false);
+            ->assertSee('search=020%200012-3456', false);
         $this->get(FeedbackResource::getUrl('view', ['record' => $b->id]))->assertOk()->assertSee('2 / 5')->assertDontSee('first-history-comment');
     }
 
@@ -96,11 +97,12 @@ class FeedbackHistoryLayoutTest extends FeedbackTest
         Queue::fake([BuildFeedbackExport::class]);
         $this->actingAs($this->staff);
 
-        Livewire::test(ListFeedback::class)->set('tableSearch', 'history-a')->set('filters.rating', 5)
+        Livewire::test(ListFeedback::class)->set('tableSearch', '020 0012-3456')->set('filters.rating', 5)
             ->call('exportHistory', 'xlsx')->assertNotified();
 
         $job = ExportJob::firstOrFail();
         $this->assertSame('xlsx', $job->format);
+        $this->assertSame('always_on', $job->filters['source']);
         $this->assertSame([$a->id], DB::table('export_job_responses')->where('export_job_id', $job->id)->pluck('feedback_response_id')->all());
         $this->api($this->payload('history-later', 'history-a'), 'history-later')->assertCreated();
         $this->assertSame([$a->id], DB::table('export_job_responses')->where('export_job_id', $job->id)->pluck('feedback_response_id')->all());
@@ -117,6 +119,7 @@ class FeedbackHistoryLayoutTest extends FeedbackTest
         $url = FeedbackResource::getUrl('view', ['record' => $a->id]);
         $this->get($url)->assertOk()->assertDontSee('Private history name')->assertDontSee('02000123456');
         Livewire::test(ViewFeedback::class, ['record' => $a->id])->assertDontSee('Private history name')->assertDontSee('02000123456');
+        Livewire::test(ListFeedback::class)->set('tableSearch', '02000123456')->assertCanNotSeeTableRecords([$a]);
         Livewire::test(ListFeedback::class)->call('exportHistory', 'xlsx')->assertForbidden();
         $this->assertDatabaseCount('export_jobs', 0);
         $viewer->update(['permissions' => ['customers.read', 'customer_identity.read', 'report.export']]);

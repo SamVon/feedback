@@ -6,6 +6,9 @@ return [
     'customer_jwt_secret' => env('FEEDBACK_CUSTOMER_JWT_SECRET'),
     'test_unlimited_popup' => env('FEEDBACK_TEST_UNLIMITED_POPUP', false),
     'customer_sync' => [
+        'live_enabled' => env('FEEDBACK_USER_SERVICE_SYNC_ENABLED', false),
+        'request_interval_ms' => env('FEEDBACK_USER_SERVICE_REQUEST_INTERVAL_MS', 1000),
+        'max_passes' => env('FEEDBACK_USER_SERVICE_MAX_PASSES', 1),
         'environment' => env('FEEDBACK_CUSTOMER_SOURCE_ENVIRONMENT'),
         'user_environment' => env('USER_SERVICE_ENVIRONMENT'),
         'user_url' => env('USER_SERVICE_BASE_URL'),

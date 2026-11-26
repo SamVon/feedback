@@ -14,6 +14,7 @@ return [
     'customer_latest_feedback' => 'ຄຳຄິດເຫັນລ່າສຸດ',
     'customer_search' => 'ຄົ້ນຫາ',
     'customer_search_id' => 'ຄົ້ນຫາ User ID',
+    'customer_search_phone' => 'ຄົ້ນຫາເບີໂທລະສັບ',
     'customer_user_id' => 'User ID',
 
     'customer_latest_response' => 'ຄຳຕອບລ່າສຸດ',
@@ -129,7 +130,7 @@ return [
     'rules_form_period' => 'ໄລຍະເວລາທີ່ສະແດງຄຳຖາມ',
     'rules_form_transactions' => 'ທຸລະກຳ',
     'rules_form_switch_hint' => 'ເມື່ອເປີດໃຊ້ງານ ແອັບສາມາດສະແດງຄຳຖາມຫຼັງຈາກທຸລະກຳທີ່ເລືອກສຳເລັດ.',
-    'rules_form_transaction_hint' => 'ປັດຈຸບັນແອັບຮອງຮັບການຕອບຄຳຖາມສຳລັບການຊື້ຄຳ ແລະ ການຂາຍຄຳ.',
+    'rules_form_transaction_hint' => 'ຮອງຮັບການຕອບຄຳຖາມສຳລັບການຊື້ຄຳ, ການຂາຍຄຳ ແລະ ການຖອນຄຳ.',
     'rules_advanced' => 'ຕັ້ງຄ່າເພີ່ມເຕີມ',
     'rules_draft_saved' => 'ບັນທຶກກົດເປັນຮ່າງແລ້ວ',
     'rules_stale' => 'ກົດຖືກປ່ຽນແລ້ວ. ກະລຸນາເປີດລຸ້ນນັ້ນອີກຄັ້ງ.',

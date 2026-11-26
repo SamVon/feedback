@@ -15,8 +15,6 @@ use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Columns\ViewColumn;
 use Filament\Tables\Concerns\InteractsWithTable;
 use Filament\Tables\Contracts\HasTable;
-use Filament\Tables\Enums\FiltersLayout;
-use Filament\Tables\Filters\SelectFilter;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Validation\ValidationException;
@@ -57,26 +55,25 @@ class Customers extends Page implements HasTable
     {
         Access::check(auth()->user(), 'customers.read');
         abort_unless(in_array($this->customerSource, ['complete', 'latest_import'], true), 422);
-        $this->tableFilters['response_status']['value'] = null;
         $this->resetPage();
     }
 
     private function customerQuery(): Builder
     {
         try {
-            return app(CustomerService::class)->listing(auth()->user(), $this->currentFilters(), $this->customerSource);
+            return app(CustomerService::class)->listing(auth()->user(), $this->currentFilters(), $this->customerSource, answeredOnly: true);
         } catch (ValidationException $exception) {
             foreach ($exception->errors() as $field => $messages) {
                 $this->addError('filters.'.$field, $messages[0]);
             }
 
-            return app(CustomerService::class)->listing(auth()->user(), [])->whereRaw('1=0');
+            return app(CustomerService::class)->listing(auth()->user(), [], answeredOnly: true)->whereRaw('1=0');
         }
     }
 
     private function currentFilters(): array
     {
-        return $this->filters ?? [];
+        return array_replace($this->filters ?? [], ['source' => 'auto_prompt']);
     }
 
     public static function canAccess(): bool
@@ -116,47 +113,31 @@ class Customers extends Page implements HasTable
         $this->resetPage();
     }
 
-    public function setCustomerStatus(string $status): void
-    {
-        Access::check(auth()->user(), 'customers.read');
-        abort_unless(in_array($status, ['', 'answered', 'unanswered', 'incomplete'], true), 422);
-        $this->tableFilters['response_status']['value'] = $status ?: null;
-        $this->updatedTableFilters();
-    }
-
     public function exportRoster(string $format): StreamedResponse
     {
         Access::check(auth()->user(), 'customers.read');
         Access::check(auth()->user(), 'report.export');
         $this->filtersForm->getState();
 
-        return app(CustomerRosterExport::class)->download(auth()->user(), $this->getFilteredTableQuery(), $format, $this->customerSource);
-    }
-
-    public function snapshotState(): array
-    {
-        return app(CustomerService::class)->snapshot(auth()->user(), $this->customerSource);
+        return app(CustomerRosterExport::class)->download(auth()->user(), $this->getFilteredSortedTableQuery(), $format, $this->customerSource,
+            array_keys($this->getTable()->getVisibleColumns()));
     }
 
     public function table(Table $table): Table
     {
-        $state = $this->snapshotState();
-        $snapshot = $state['selected'];
-
         return $table->query(fn (): Builder => $this->customerQuery())->columns([
             TextColumn::make('number')->label('#')->rowIndex(),
             TextColumn::make('phone')->label(__('feedback.customer'))->default('—')
                 ->description(fn (CohortMember $record): ?string => $record->cohort_snapshot_id === null && ! filled($record->display_name) && ! filled($record->phone) ? __('feedback.customer_profile_pending') : ($record->app_reported_phone && filled($record->phone) ? __('feedback.customer_app_reported') : null))
                 ->visible(fn (): bool => auth()->user()->can('customer_identity.read')),
             TextColumn::make('actor_user_id')->label(__('feedback.customer_user_id'))
-                ->searchable(query: fn (Builder $query, string $search): Builder => $query->where('cohort_members.actor_user_id', 'like', '%'.$search.'%'))
                 ->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('display_name')->label(__('feedback.name'))->placeholder('—')
                 ->visible(fn (): bool => auth()->user()->can('customer_identity.read')),
             TextColumn::make('contact_phone')->label(__('feedback.customer_phone'))->state(fn (CohortMember $record): ?string => $record->phone)->placeholder('—')
                 ->visible(fn (): bool => auth()->user()->can('customer_identity.read')),
             TextColumn::make('response_status')->label(__('feedback.response_status'))
-                ->state(fn (CohortMember $record): string => __('feedback.'.(! $record->identity_complete || $snapshot?->status !== 'complete' ? 'incomplete' : ($record->response_count > 0 ? 'answered' : 'unanswered'))))->badge(),
+                ->state(fn (): string => __('feedback.answered'))->badge(),
             TextColumn::make('response_count')->label(__('feedback.responses'))->numeric(),
             TextColumn::make('invitation_status')->label(__('feedback.invitation_status'))
                 ->state(fn (CohortMember $record): string => __('feedback.'.(! $record->identity_complete ? 'unknown'
@@ -166,20 +147,12 @@ class Customers extends Page implements HasTable
             ViewColumn::make('latest_rating')->label(__('feedback.rating'))->view('filament.partials.customer-rating')->visible(fn (): bool => auth()->user()->can('feedback.read')),
             ViewColumn::make('latest_feedback')->label(__('feedback.customer_latest_feedback'))->view('filament.partials.customer-latest-feedback')->visible(fn (): bool => auth()->user()->can('feedback.read')),
         ])->defaultSort('cohort_members.actor_user_id')->paginated([10, 25, 50])
-            ->searchPlaceholder(__('feedback.customer_search_id'))
-            ->filters([SelectFilter::make('response_status')->label(__('feedback.response_status'))
-                ->options(collect(['answered', 'unanswered', 'incomplete'])->mapWithKeys(fn (string $value): array => [$value => __('feedback.'.$value)])->all())
-                ->query(function (Builder $query, array $data) use ($snapshot): Builder {
-                    return match ($data['value'] ?? null) {
-                        'answered' => $query->whereRaw($snapshot?->status === 'complete' ? '1=1' : '1=0')->where('identity_complete', true)->whereNotNull('customer_responses.actor_user_id'),
-                        'unanswered' => $query->whereRaw($snapshot?->status === 'complete' ? '1=1' : '1=0')->where('identity_complete', true)->whereNull('customer_responses.actor_user_id'),
-                        'incomplete' => $query->when($snapshot?->status === 'complete', fn (Builder $q): Builder => $q->where('identity_complete', false)),
-                        default => $query,
-                    };
-                })], layout: FiltersLayout::Hidden)
+            ->searchable()
+            ->searchUsing(fn (Builder $query, string $search): Builder => ReportFilters::searchPhone($query, $search, 'phone', 'cohort_members.id'))
+            ->searchPlaceholder(__('feedback.customer_search_phone'))
             ->recordActions([Action::make('history')->label(__('feedback.details'))
                 ->authorize(fn (): bool => auth()->user()?->can('feedback.read') ?? false)
                 ->url(fn (CohortMember $record): string => CustomerDetail::getUrl(['record' => $record->id, 'filters' => ReportFilters::validate($this->currentFilters()), 'customer_source' => $this->customerSource])),
-            ])->emptyStateHeading($snapshot ? __('feedback.empty') : __('feedback.no_snapshot'));
+            ])->emptyStateHeading(__('feedback.empty'));
     }
 }

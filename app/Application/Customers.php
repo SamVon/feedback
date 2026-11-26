@@ -14,13 +14,13 @@ use Illuminate\Support\Facades\DB;
 
 final class Customers
 {
-    public function listing(User $user, array $filters, string $source = 'complete'): Builder
+    public function listing(User $user, array $filters, string $source = 'complete', bool $answeredOnly = false): Builder
     {
         Access::check($user, 'customers.read');
         $filters = ReportFilters::validate($filters);
         $state = $this->snapshot($user, $source);
         $snapshot = $state['selected'];
-        $responses = ReportFilters::query($filters)->select('actor_user_id')
+        $responses = ReportFilters::query($filters)->when($answeredOnly, fn (Builder $query): Builder => $query->whereHas('answers'))->select('actor_user_id')
             ->selectRaw('COUNT(*) as response_count, MAX(received_at) as latest_at')->groupBy('actor_user_id');
         $invitations = FeedbackInvitation::query()->select('feedback_invitations.actor_user_id')
             ->leftJoin('prompt_events', 'prompt_events.invitation_id', '=', 'feedback_invitations.id')
@@ -36,11 +36,15 @@ final class Customers
             ->select([...$columns, 'customer_responses.latest_at'])
             ->selectRaw('COALESCE(customer_responses.response_count, 0) as response_count')
             ->addSelect('customer_invitations.invitation_count', 'customer_invitations.shown_count');
+        if ($answeredOnly) {
+            $query->whereNotNull('customer_responses.actor_user_id');
+        }
         if (isset($filters['actor_user_id'])) {
             $query->where('cohort_members.actor_user_id', $filters['actor_user_id']);
         }
         if ($user->can('feedback.read')) {
             $latest = ReportFilters::query($filters)->whereColumn('actor_user_id', 'cohort_members.actor_user_id')
+                ->when($answeredOnly, fn (Builder $query): Builder => $query->whereHas('answers'))
                 ->orderByDesc('received_at')->orderByDesc('id')->limit(1)->select('id');
             $query->selectSub($latest, 'latest_response_id')
                 ->with(['latestFilteredResponse.answers.question', 'latestFilteredResponse.answers.options', 'latestFilteredResponse.context', 'latestFilteredResponse.version.survey']);

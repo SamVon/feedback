@@ -96,7 +96,7 @@ class Dashboard extends \Filament\Pages\Dashboard
 
     public function getSubheading(): ?string
     {
-        return __('feedback.report_hint');
+        return null;
     }
 
     public function filtersForm(Schema $schema): Schema

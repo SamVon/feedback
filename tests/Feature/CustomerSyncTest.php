@@ -20,9 +20,11 @@ class CustomerSyncTest extends FeedbackTest
     private function syncSetup(): void
     {
         $this->freezeTime();
+        Sleep::fake();
         Storage::fake('local');
         Http::preventStrayRequests();
         config(['feedback.customer_sync' => [
+            'live_enabled' => true, 'max_passes' => 3,
             'environment' => 'staging', 'user_environment' => 'staging',
             'user_url' => 'https://user.test', 'user_token' => 'read-only-token',
             'feedback_url' => 'https://feedback.test', 'cohort_token' => 'cohort-test',
@@ -195,7 +197,7 @@ class CustomerSyncTest extends FeedbackTest
         $this->artisan('feedback:sync-customers', ['--allow-partial' => true])->assertFailed();
 
         $this->assertDatabaseCount('cohort_snapshots', 0);
-        Http::assertSentCount(3);
+        Http::assertSentCount(1);
     }
 
     public function test_customers_sync_resumes_encrypted_source_checkpoint_after_connection_failure(): void
@@ -219,17 +221,18 @@ class CustomerSyncTest extends FeedbackTest
         }]);
         $run = (string) Str::uuid();
         $this->artisan('feedback:sync-customers', ['--run' => $run])->assertFailed();
-        $this->assertSame([0, 1, 1, 1], $offsets);
+        $this->assertSame([0, 1], $offsets);
         $this->assertDatabaseCount('cohort_snapshots', 0);
         config(['feedback.customer_sync.user_url' => 'https://different-source.test']);
         $this->artisan('feedback:sync-customers', ['--run' => $run])
             ->expectsOutput('Customer sync failed. Resume must use the original source and target environment.')->assertFailed();
         config(['feedback.customer_sync.user_url' => 'https://user.test']);
         $failSource = false;
+        $this->travel(61)->seconds();
 
         $this->artisan('feedback:sync-customers', ['--run' => $run])->assertSuccessful();
 
-        $this->assertSame([0, 1, 1, 1, 1], $offsets);
+        $this->assertSame([0, 1, 1], $offsets);
         $this->assertSame(['checkpoint-0', 'checkpoint-1'], CohortMember::orderBy('actor_user_id')->pluck('actor_user_id')->all());
         Storage::disk('local')->assertMissing('customer-sync/'.$run.'/reading/state.enc');
         Storage::disk('local')->assertExists('customer-sync/'.$run.'.enc');
@@ -332,7 +335,7 @@ class CustomerSyncTest extends FeedbackTest
         Http::assertSentCount(6);
     }
 
-    public function test_customers_table_includes_nonrespondents_and_filters_by_date_without_one_id(): void
+    public function test_customers_table_excludes_nonrespondents_and_filters_by_date_without_one_id(): void
     {
         $this->syncSetup();
         $fail = false;
@@ -345,13 +348,11 @@ class CustomerSyncTest extends FeedbackTest
         $this->api($this->payload('customer-answer', 'account-a'), 'customer-answer')->assertCreated();
         $this->actingAs($this->staff);
         $members = CohortMember::orderBy('actor_user_id')->get();
-        $page = Livewire::test(Customers::class)->assertCanSeeTableRecords($members);
-        $page->filterTable('response_status', 'answered')->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
-        $page->filterTable('response_status', 'unanswered')->assertCanSeeTableRecords([$members[1]])->assertCanNotSeeTableRecords([$members[0]]);
+        $page = Livewire::test(Customers::class)->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
         $this->travel(2)->days();
         $page->set('filters.from', now()->toDateString())->assertHasErrors('filters.until')
             ->set('filters.until', now()->toDateString())
-            ->assertCanSeeTableRecords($members);
+            ->assertCanNotSeeTableRecords($members);
         $rows = app(CustomerService::class)->listing($this->staff, ['from' => now()->toDateString()])->get();
         $this->assertSame([0, 0], $rows->pluck('response_count')->map(fn ($n) => (int) $n)->all());
         $this->assertNull($rows[0]->latest_at);
@@ -373,7 +374,7 @@ class CustomerSyncTest extends FeedbackTest
         $rows = app(CustomerService::class)->listing($viewer, [])->get();
         $this->assertSame(['existing-account'], $rows->pluck('actor_user_id')->all());
         $this->assertArrayNotHasKey('display_name', $rows[0]->getAttributes());
-        Livewire::test(Customers::class)->assertDontSee('Hidden identity')->assertTableActionHidden('history', $rows[0]);
+        Livewire::test(Customers::class)->assertDontSee('Hidden identity')->assertCanNotSeeTableRecords($rows);
         $detail = app(CustomerService::class)->detail($viewer, $rows[0], []);
         $this->assertArrayNotHasKey('display_name', $detail);
         $this->assertArrayNotHasKey('latest_answers', $detail);

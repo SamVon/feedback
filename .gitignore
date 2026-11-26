@@ -28,7 +28,7 @@ _ide_helper.php
 Homestead.json
 Homestead.yaml
 Thumbs.db
-
+.tool-versions
 /.local-feedback-token
 
 /.local-feedback-cohort-token

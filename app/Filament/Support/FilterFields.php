@@ -2,10 +2,10 @@
 
 namespace App\Filament\Support;
 
+use App\Application\ReportFilters;
 use App\Models\Question;
 use App\Models\Survey;
 use App\Models\SurveyVersion;
-use App\Application\ReportFilters;
 use Filament\Forms\Components\Select;
 use Filament\Forms\Components\TextInput;
 use Filament\Schemas\Components\Utilities\Get;
@@ -16,7 +16,7 @@ final class FilterFields
     {
         $field = FilterDateTimePicker::make($name)->label($label)->native(false)->seconds(false)
             ->displayFormat('d/m/Y H:i')->format('Y-m-d H:i:s')->timezone('Asia/Vientiane')
-            ->placeholder('dd/mm/yyyy HH:mm')->helperText(__('feedback.filter_time_hint'));
+            ->placeholder('dd/mm/yyyy HH:mm');
 
         return $name === 'until' ? $field->afterOrEqual('from') : $field;
     }

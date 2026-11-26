@@ -76,7 +76,7 @@ class CustomerDetail extends Page
         $filters = $this->filters;
         $filters['actor_user_id'] = $this->customer->actor_user_id;
 
-        return ReportFilters::query($filters)->with('answers.question', 'answers.options', 'version.survey', 'context')
+        return ReportFilters::query($filters)->whereHas('answers')->with('answers.question', 'answers.options', 'version.survey', 'context')
             ->orderByDesc('received_at')->orderByDesc('id')->paginate(1, ['*'], 'responsesPage');
     }
 }

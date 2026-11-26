@@ -8,6 +8,7 @@ use App\Application\Customers as CustomerService;
 use App\Filament\Pages\CustomerDetail;
 use App\Filament\Pages\Customers;
 use App\Models\CohortMember;
+use App\Models\FeedbackResponse;
 use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 use Livewire\Livewire;
@@ -19,6 +20,7 @@ class CustomersLayoutTest extends FeedbackTest
     {
         $this->roster();
         $this->api($this->payload('live-answer', 'new-live-customer'), 'live-answer')->assertCreated();
+        FeedbackResponse::query()->update(['source' => 'auto_prompt']);
         $this->travel(1)->minute();
         $cohorts = app(Cohorts::class);
         [$import] = $cohorts->start('user-adapter', 'live-start', [
@@ -54,9 +56,9 @@ class CustomersLayoutTest extends FeedbackTest
         $this->actingAs($this->staff);
         $page = Livewire::test(Customers::class)->assertDontSee('Live imported profile')
             ->set('customerSource', 'latest_import')->assertCanSeeTableRecords([$preview])
-            ->assertSee('Live imported profile')->assertSee(__('feedback.customer_import_preview_hint'))
+            ->assertSee('Live imported profile')->assertDontSee(__('feedback.customer_import_preview_hint'))
             ->assertDontSee('Failed partial profile');
-        $page->set('tableSearch', 'new-live-customer')->call('exportRoster', 'xlsx')->assertFileDownloaded('easy-gold-customers.xlsx');
+        $page->call('exportRoster', 'xlsx')->assertFileDownloaded('easy-gold-customers.xlsx');
         $export = app(CustomerRosterExport::class)->download($this->staff,
             $service->listing($this->staff, ['actor_user_id' => 'new-live-customer'], 'latest_import'), 'xlsx', 'latest_import');
         ob_start();
@@ -66,8 +68,8 @@ class CustomersLayoutTest extends FeedbackTest
         try {
             file_put_contents($file, $bytes);
             $book = IOFactory::load($file);
-            $this->assertSame('Live imported profile', $book->getActiveSheet()->getCell('B2')->getValue());
-            $this->assertSame(__('feedback.incomplete'), $book->getActiveSheet()->getCell('D2')->getValue());
+            $this->assertSame('Live imported profile', $book->getActiveSheet()->getCell('C2')->getValue());
+            $this->assertSame(__('feedback.answered'), $book->getActiveSheet()->getCell('E2')->getValue());
             $book->disconnectWorksheets();
         } finally {
             unlink($file);
@@ -103,15 +105,13 @@ class CustomersLayoutTest extends FeedbackTest
         $this->assertDatabaseCount('cohort_members', 2);
         $this->assertSame('complete', $service->snapshot($this->staff)['complete']->status);
         $this->actingAs($this->staff);
-        $page = Livewire::test(Customers::class)->set('tableSearch', 'new-app-customer')
-            ->assertCanSeeTableRecords([$new])->assertCanNotSeeTableRecords([$rows->first()])
+        $page = Livewire::test(Customers::class)
+            ->assertCanSeeTableRecords([$new, $rows->first()])->assertCanNotSeeTableRecords([$rows[1]])
             ->assertSee(__('feedback.customer_profile_pending'));
         $url = $page->instance()->getTable()->getAction('history')->record($new)->getUrl();
         $this->get($url)->assertOk()->assertSee('new-app-customer')->assertSee('5 / 5')
             ->assertSee(__('feedback.customer_profile_pending'))->assertDontSee('Secret customer');
-        $page->call('setCustomerStatus', 'incomplete')->assertCanSeeTableRecords([$new]);
-        $page->call('setCustomerStatus', 'unanswered')->assertCanNotSeeTableRecords([$new]);
-        $page->call('setCustomerStatus', '')->call('exportRoster', 'xlsx')->assertFileDownloaded('easy-gold-customers.xlsx');
+        $page->call('exportRoster', 'xlsx')->assertFileDownloaded('easy-gold-customers.xlsx');
 
         $viewer = User::factory()->create(['active' => true, 'permissions' => ['customers.read']]);
         $this->actingAs($viewer)->get($url)->assertForbidden();
@@ -262,16 +262,25 @@ class CustomersLayoutTest extends FeedbackTest
         $this->api($this->payload('layout-answer', 'layout-a'), 'layout-answer')->assertCreated();
     }
 
-    public function test_layout_status_tabs_search_and_export_share_customer_filters(): void
+    public function test_layout_only_respondents_phone_search_and_export_share_customer_filters(): void
     {
         $this->roster();
+        FeedbackResponse::query()->update(['source' => 'auto_prompt']);
         $this->actingAs($this->staff);
         $members = CohortMember::orderBy('actor_user_id')->get();
-        $page = Livewire::test(Customers::class)->assertSee('Export Excel')->assertSee('Export PDF')->assertCanSeeTableRecords($members);
-        $page->call('setCustomerStatus', 'answered')->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
+        $members[0]->update(['phone' => '02000111111']);
+        $members[1]->update(['phone' => '02000222222']);
+        $page = Livewire::test(Customers::class)->assertSee('Export Excel')->assertSee('Export PDF')
+            ->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
         $page->call('exportRoster', 'xlsx')->assertFileDownloaded('easy-gold-customers.xlsx');
-        $page->call('setCustomerStatus', 'unanswered')->assertCanSeeTableRecords([$members[1]])->assertCanNotSeeTableRecords([$members[0]]);
-        $page->call('setCustomerStatus', '')->set('tableSearch', 'layout-b')->assertCanSeeTableRecords([$members[1]])->assertCanNotSeeTableRecords([$members[0]]);
+        $page->set('tableSearch', '020 0011-1111')->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
+        $page->set('tableSearch', '1111')->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
+        $page->set('tableSearch', '2222')->assertCanNotSeeTableRecords($members);
+        $page->set('tableSearch', 'layout-b')->assertCanNotSeeTableRecords($members);
+        $page->set('tableSearch', '')->assertCanSeeTableRecords([$members[0]])->assertCanNotSeeTableRecords([$members[1]]);
+        $viewer = User::factory()->create(['active' => true, 'permissions' => ['customers.read']]);
+        $this->actingAs($viewer);
+        Livewire::test(Customers::class)->set('tableSearch', '02000222222')->assertCanNotSeeTableRecords($members);
     }
 
     public function test_layout_roster_exports_use_literal_cells_and_pdf_output(): void
@@ -288,8 +297,8 @@ class CustomersLayoutTest extends FeedbackTest
             $book = IOFactory::load($file);
             $sheet = $book->getActiveSheet();
             $this->assertSame(2, $sheet->getHighestRow());
-            $this->assertSame('=Secret customer', $sheet->getCell('B2')->getValue());
-            $this->assertSame('s', $sheet->getCell('B2')->getDataType());
+            $this->assertSame('=Secret customer', $sheet->getCell('C2')->getValue());
+            $this->assertSame('s', $sheet->getCell('C2')->getDataType());
             $book->disconnectWorksheets();
         } finally {
             unlink($file);

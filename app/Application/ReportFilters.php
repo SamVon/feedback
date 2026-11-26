@@ -12,6 +12,24 @@ use Illuminate\Support\Facades\Validator;
 
 final class ReportFilters
 {
+    public static function searchPhone(Builder $query, string $search, string $phoneColumn, string $keyColumn): Builder
+    {
+        $digits = preg_replace('/\D/', '', $search);
+        if (! auth()->user()?->can('customer_identity.read') || $digits === '' || preg_match('/[^0-9+\s().-]/', $search)) {
+            return $query->whereRaw('1=0');
+        }
+
+        $keys = [];
+        foreach ((clone $query)->withoutEagerLoads()->cursor() as $record) {
+            $phone = preg_replace('/\D/', '', $record->{$phoneColumn} ?? '');
+            if ($phone !== '' && str_contains($phone, $digits)) {
+                $keys[] = $record->getKey();
+            }
+        }
+
+        return $query->whereIn($keyColumn, $keys);
+    }
+
     public static function dateInput(string|DateTimeInterface $value, bool $until = false): string
     {
         if ($value instanceof DateTimeInterface) {
@@ -94,6 +112,7 @@ final class ReportFilters
         if (isset($f['rating'])) {
             $q->whereHas('answers', fn ($answer) => $answer->where('rating_value', $f['rating'])->when($f['question_id'] ?? null, fn ($answer, $id) => $answer->where('question_id', $id)));
         }
+
         return self::applyDateRange($q, $f, 'received_at');
     }
 

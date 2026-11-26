@@ -3,10 +3,12 @@
 namespace App\Application;
 
 use App\Models\ExportJob;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\LazyCollection;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
@@ -33,6 +35,18 @@ final class ExportRenderer
     public function rows(ExportJob $job): \Generator
     {
         $members = DB::table('export_job_responses')->where('export_job_id', $job->id)->select('feedback_response_id');
+        if ($job->table_layout !== null) {
+            $columns = TableExportColumns::resolve(User::findOrFail($job->user_id), 'feedback', $job->table_layout['columns']);
+            $direction = $job->table_layout['sort_direction'];
+            abort_unless(in_array($direction, ['asc', 'desc'], true), 422);
+            $number = 0;
+            foreach (ReportFilters::query($job->filters)->whereIn('id', $members)->with('answers.options', 'answers.question', 'context', 'version.survey')
+                ->orderBy('received_at', $direction)->orderBy('id', $direction)->lazy(200) as $response) {
+                yield TableExportColumns::feedbackRow($response, $columns, ++$number, $job->locale);
+            }
+
+            return;
+        }
         foreach (ReportFilters::query($job->filters)->whereIn('id', $members)->with('answers.options', 'answers.question', 'context')->lazyById(200) as $response) {
             foreach ($response->answers as $answer) {
                 if (! empty($job->filters['question_id']) && $answer->question_id !== $job->filters['question_id']) {
@@ -41,6 +55,16 @@ final class ExportRenderer
                 yield [$response->id, $response->actor_user_id, $response->survey_version_id, $answer->question_id, $response->source, $response->context?->transaction_type, $response->received_at->utc()->toIso8601String(), $response->received_at->setTimezone('Asia/Vientiane')->toIso8601String(), $answer->rating_value, $answer->text_value, $answer->options->pluck('code')->join('|'), $answer->question->label[$job->locale] ?? $answer->question->label['en'], $answer->options->map(fn ($o) => $o->label[$job->locale] ?? $o->label['en'])->join(' | ')];
             }
         }
+    }
+
+    public function headers(ExportJob $job): array
+    {
+        if ($job->table_layout === null) {
+            return self::HEADERS;
+        }
+        $columns = TableExportColumns::resolve(User::findOrFail($job->user_id), 'feedback', $job->table_layout['columns']);
+
+        return TableExportColumns::headers('feedback', $columns, $job->locale);
     }
 
     public function write(ExportJob $job, string $path): void
@@ -53,7 +77,7 @@ final class ExportRenderer
             $stream = fopen($path, 'wb');
             try {
                 fwrite($stream, "\xEF\xBB\xBF");
-                fputcsv($stream, self::HEADERS, ',', '"', '');
+                fputcsv($stream, $this->headers($job), ',', '"', '');
                 foreach ($this->rows($job) as $row) {
                     fputcsv($stream, array_map([Exports::class, 'safeCell'], $row), ',', '"', '');
                 }
@@ -68,21 +92,24 @@ final class ExportRenderer
         $book = new Spreadsheet;
         try {
             $sheet = $book->getActiveSheet()->setTitle('Responses');
-            $sheet->fromArray(self::HEADERS);
+            $headers = $this->headers($job);
+            $sheet->fromArray($headers);
             $index = 2;
             foreach ($this->rows($job) as $row) {
                 foreach ($row as $column => $value) {
                     // User-controlled values are always literal strings, never Excel formulas.
-                    $sheet->setCellValueExplicit([$column + 1, $index], $value ?? '', $column === 8 && $value !== null ? DataType::TYPE_NUMERIC : DataType::TYPE_STRING);
+                    $numeric = $job->table_layout !== null ? is_int($value) || is_float($value) : $column === 8 && $value !== null;
+                    $sheet->setCellValueExplicit([$column + 1, $index], $value ?? '', $numeric ? DataType::TYPE_NUMERIC : DataType::TYPE_STRING);
                 }
                 $index++;
             }
             $sheet->freezePane('A2');
-            $sheet->setAutoFilter('A1:M'.max(1, $index - 1));
-            $sheet->getStyle('A1:M1')->getFont()->setBold(true);
-            $sheet->getStyle('A1:M'.max(1, $index - 1))->getAlignment()->setWrapText(true);
-            foreach (range('A', 'M') as $column) {
-                $sheet->getColumnDimension($column)->setWidth(in_array($column, ['J', 'L', 'M']) ? 40 : 24);
+            $last = Coordinate::stringFromColumnIndex(count($headers));
+            $sheet->setAutoFilter('A1:'.$last.max(1, $index - 1));
+            $sheet->getStyle('A1:'.$last.'1')->getFont()->setBold(true);
+            $sheet->getStyle('A1:'.$last.max(1, $index - 1))->getAlignment()->setWrapText(true);
+            foreach (range(1, count($headers)) as $column) {
+                $sheet->getColumnDimension(Coordinate::stringFromColumnIndex($column))->setWidth(28);
             }
             $meta = $book->createSheet()->setTitle('Summary');
             $lines = [['Easy Gold Feedback', $job->snapshot_at->toIso8601String()], ['Timezone', 'Asia/Vientiane'], ['Time basis', 'received_at']];
@@ -123,12 +150,20 @@ final class ExportRenderer
 
     private function pdf(ExportJob $job, string $path): void
     {
+        $headers = $this->headers($job);
         $pdf = new Mpdf(['tempDir' => storage_path('app/private/mpdf'), 'format' => 'A4-L', 'default_font' => 'dhyana', 'default_font_size' => 9]);
         $pdf->SetTitle('Easy Gold Feedback');
         $pdf->SetHTMLFooter('<div style="text-align:right">Easy Gold · {PAGENO} / {nbpg}</div>');
         $pdf->WriteHTML(view('exports.report', ['job' => $job, 'rows' => [], 'intro' => true])->render());
+        $written = false;
         foreach (LazyCollection::make(fn () => $this->rows($job))->chunk(50) as $rows) {
-            $pdf->WriteHTML(view('exports.report', ['job' => $job, 'rows' => $rows, 'intro' => false])->render());
+            $written = true;
+            $pdf->WriteHTML($job->table_layout !== null
+                ? view('exports.customers', ['headers' => $headers, 'rows' => $rows])->render()
+                : view('exports.report', ['job' => $job, 'rows' => $rows, 'intro' => false])->render());
+        }
+        if (! $written && $job->table_layout !== null) {
+            $pdf->WriteHTML(view('exports.customers', ['headers' => $headers, 'rows' => []])->render());
         }
         $pdf->Output($path, Destination::FILE);
     }

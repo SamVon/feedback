@@ -234,6 +234,27 @@ class PopupPolicyTest extends TestCase
         $this->assertSame(Idempotency::hash($legacy), Idempotency::hash($version->fresh()->rules));
     }
 
+    public function test_withdraw_gold_can_be_enabled_and_published_without_enabling_other_transactions(): void
+    {
+        $this->prepare();
+        $this->actingAs($this->staff);
+        $version = RuleVersion::firstOrFail();
+        Livewire::test(ListRules::class)->callTableAction('newVersion', $version, data: ['enabled_transaction_types' => ['WITHDRAW_GOLD']])
+            ->assertHasNoTableActionErrors();
+        $draft = RuleVersion::where('status', 'draft')->firstOrFail();
+        $rules = collect($draft->rules['transaction_rules'])->keyBy('transaction_type');
+        $this->assertTrue($rules['WITHDRAW_GOLD']['enabled']);
+        $this->assertFalse($rules['BUY_GOLD']['enabled']);
+        $this->assertFalse($rules['SALE_GOLD']['enabled']);
+        foreach (['submit', 'approve', 'publish'] as $action) {
+            app(Changes::class)->transition($this->staff, 'rules', $draft->id, 1, $action);
+        }
+        $id = $this->eligibility('WITHDRAW_GOLD', 'withdraw')->assertCreated()->assertJsonPath('eligible', true)->json('invitation_id');
+        $this->apiPost('responses', $this->response($id), 'withdraw-answer')->assertCreated();
+        $this->eligibility('WITHDRAW_GOLD', 'withdraw-next')->assertJsonPath('reason', 'cooldown_active')->assertJsonPath('successful_response_count', 1);
+        $this->eligibility('BUY_GOLD', 'buy-disabled')->assertJsonPath('reason', 'trigger_disabled');
+    }
+
     public function test_filament_rules_show_pending_policy_and_save_independent_type_switches(): void
     {
         $this->prepare();

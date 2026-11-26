@@ -14,6 +14,7 @@ return [
     'customer_latest_feedback' => 'Latest feedback',
     'customer_search' => 'Search',
     'customer_search_id' => 'Search User ID',
+    'customer_search_phone' => 'Search phone number',
     'customer_user_id' => 'User ID',
 
     'customer_latest_response' => 'Latest response',
@@ -129,7 +130,7 @@ return [
     'rules_form_period' => 'Question display period',
     'rules_form_transactions' => 'Transactions',
     'rules_form_switch_hint' => 'When enabled, the app can show questions after a successful selected transaction.',
-    'rules_form_transaction_hint' => 'The app currently supports buy gold and sell gold for feedback.',
+    'rules_form_transaction_hint' => 'Feedback supports buying, selling, and withdrawing gold.',
     'rules_advanced' => 'Advanced settings',
     'rules_draft_saved' => 'Rules saved as a draft',
     'rules_stale' => 'These rules changed while you were editing. Reopen the version and try again.',

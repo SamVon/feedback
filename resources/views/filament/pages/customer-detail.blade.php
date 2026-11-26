@@ -44,8 +44,8 @@
                     <p class="eg-customer-filter-hint">{{ __('feedback.customer_app_reported_profile') }}</p>
                 @endif
             @endcan
-            @if (! $customer->identity_complete || $customer->snapshot?->status !== 'complete')
-                <p class="eg-customer-warning">{{ __($customer->cohort_snapshot_id === null ? ($missingProfile ? 'feedback.customer_profile_pending' : 'feedback.incomplete') : ($this->customerSource === 'latest_import' ? 'feedback.customer_import_incomplete' : 'feedback.incomplete_snapshot')) }}</p>
+            @if ($missingProfile)
+                <p class="eg-customer-warning">{{ __('feedback.customer_profile_pending') }}</p>
             @endif
         </section>
         @if ($response)

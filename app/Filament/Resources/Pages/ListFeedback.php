@@ -66,21 +66,14 @@ class ListFeedback extends ListRecords
 
     public function advancedFiltersForm(Schema $schema): Schema
     {
-        return $schema->components(collect(FilterFields::make())->reject(fn ($field): bool => in_array($field->getName(), ['from', 'until', 'actor_user_id'], true))
-            ->map(function ($field) {
-                if ($field->getName() === 'source') {
-                    $field->options(['auto_prompt' => __('feedback.history_source_auto_prompt'), 'always_on' => __('feedback.history_source_always_on')]);
-                }
-
-                return $field;
-            })->all())
+        return $schema->components(collect(FilterFields::make())->reject(fn ($field): bool => in_array($field->getName(), ['from', 'until', 'actor_user_id', 'source'], true))->all())
             ->statePath('filters')->columns(['default' => 1, 'md' => 2, 'xl' => 4])->live();
     }
 
     public function dataFilters(): array
     {
         Access::check(auth()->user(), 'feedback.read');
-        $filters = $this->filters ?? [];
+        $filters = array_replace($this->filters ?? [], ['source' => 'always_on']);
         try {
             return ReportFilters::validate($filters);
         } catch (ValidationException $exception) {
@@ -113,19 +106,14 @@ class ListFeedback extends ListRecords
         $this->resetPage();
     }
 
-    public function setFeedbackSource(string $source): void
-    {
-        Access::check(auth()->user(), 'feedback.read');
-        abort_unless(in_array($source, ['', 'auto_prompt', 'always_on'], true), 422);
-        $this->filters['source'] = $source ?: null;
-        $this->updatedFilters();
-    }
-
     public function exportHistory(string $format): ?StreamedResponse
     {
         Access::check(auth()->user(), 'report.export');
         $filters = $this->dataFilters();
-        $job = app(Exports::class)->create(auth()->user(), $filters, $format, $this->getFilteredTableQuery());
+        $job = app(Exports::class)->create(auth()->user(), $filters, $format, $this->getFilteredTableQuery(), [
+            'columns' => array_keys($this->getTable()->getVisibleColumns()),
+            'sort_direction' => $this->getTableSortDirection() ?? 'desc',
+        ]);
         $job->refresh();
         if ($job->status === 'ready') {
             return app(Exports::class)->download(auth()->user(), $job);

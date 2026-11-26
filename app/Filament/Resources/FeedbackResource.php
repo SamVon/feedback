@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Application\ReportFilters;
 use App\Filament\Support\ReadOnlyResource;
 use App\Models\FeedbackResponse;
 use Filament\Actions\Action;
@@ -24,7 +25,7 @@ class FeedbackResource extends ReadOnlyResource
 
     public static function getEloquentQuery(): Builder
     {
-        return parent::getEloquentQuery()->with('answers.question', 'answers.options', 'context', 'version.survey');
+        return parent::getEloquentQuery()->whereHas('answers')->with('answers.question', 'answers.options', 'context', 'version.survey');
     }
 
     public static function table(Table $table): Table
@@ -36,7 +37,7 @@ class FeedbackResource extends ReadOnlyResource
             TextColumn::make('received_at')->label(__('feedback.history_response_time'))->dateTime('d/m/Y H:i', timezone: 'Asia/Vientiane')->sortable(),
             TextColumn::make('customer_reference')->label(__('feedback.customer'))->state(fn (FeedbackResponse $record): ?string => $record->customer_phone)->placeholder('—')
                 ->visible(fn (): bool => auth()->user()->can('customer_identity.read')),
-            TextColumn::make('actor_user_id')->label(__('feedback.customer_user_id'))->searchable()->toggleable(isToggledHiddenByDefault: true),
+            TextColumn::make('actor_user_id')->label(__('feedback.customer_user_id'))->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('customer_name')->label(__('feedback.history_customer_name'))->placeholder('—')->limit(24)
                 ->visible(fn (): bool => auth()->user()->can('customer_identity.read')),
             TextColumn::make('customer_phone')->label(__('feedback.customer_phone'))->placeholder('—')
@@ -50,11 +51,13 @@ class FeedbackResource extends ReadOnlyResource
             TextColumn::make('source')->label(__('feedback.source'))->badge()
                 ->formatStateUsing(fn (string $state): string => __('feedback.history_source_'.$state))->toggleable(isToggledHiddenByDefault: true),
             TextColumn::make('context.transaction_type')->label(__('feedback.transaction_type'))->placeholder('—')->toggleable(isToggledHiddenByDefault: true),
-        ])->defaultSort('received_at', 'desc')->paginated([10, 25, 50])->searchPlaceholder(__('feedback.customer_search_id'))->recordUrl($detailUrl)->recordActions([
-            Action::make('details')->label(__('feedback.details'))->icon('heroicon-m-ellipsis-vertical')->color('gray')
-                ->authorize(fn (): bool => auth()->user()?->can('feedback.read') ?? false)
-                ->url($detailUrl),
-        ])->emptyStateHeading(__('feedback.empty'));
+        ])->defaultSort('received_at', 'desc')->paginated([10, 25, 50])->searchable()
+            ->searchUsing(fn (Builder $query, string $search): Builder => ReportFilters::searchPhone($query, $search, 'customer_phone', 'feedback_responses.id'))
+            ->searchPlaceholder(__('feedback.customer_search_phone'))->recordUrl($detailUrl)->recordActions([
+                Action::make('details')->label(__('feedback.details'))->icon('heroicon-m-ellipsis-vertical')->color('gray')
+                    ->authorize(fn (): bool => auth()->user()?->can('feedback.read') ?? false)
+                    ->url($detailUrl),
+            ])->emptyStateHeading(__('feedback.empty'));
     }
 
     public static function getPages(): array

@@ -169,18 +169,19 @@ class CustomerFeedbackApiTest extends FeedbackTest
         $this->withHeaders(['Authorization' => 'Bearer '.$this->token(['_id' => 'customer-2']), 'Idempotency-Key' => 'response-2'])->postJson('/api/v1/feedback/responses', $answer)->assertUnprocessable();
     }
 
-    public function test_unlimited_popup_testing_allows_every_new_buy_and_sale_but_preserves_owned_single_response(): void
+    public function test_unlimited_popup_testing_allows_buy_sale_and_withdraw_but_preserves_owned_single_response(): void
     {
         $this->freezeTime();
         config(['feedback.customer_jwt_secret' => 'test-customer-secret', 'feedback.test_unlimited_popup' => true]);
         $rules = $this->rule->rules;
         $rules['transaction_rules'][] = array_replace($rules['transaction_rules'][0], ['transaction_type' => 'SALE_GOLD']);
+        $rules['transaction_rules'][] = array_replace($rules['transaction_rules'][0], ['transaction_type' => 'WITHDRAW_GOLD']);
         $version = app(Changes::class)->ruleDraft($this->staff, $rules);
         app(Changes::class)->transition($this->staff, 'rules', $version->id, 1, 'publish');
         $headers = ['Authorization' => 'Bearer '.$this->token()];
         $version = $this->withHeaders($headers)->getJson('/api/v1/feedback/config?source=auto_prompt')
             ->assertOk()->assertJsonPath('channels.auto_prompt', true)->json('survey_version_id');
-        foreach (['BUY_GOLD', 'SALE_GOLD'] as $type) {
+        foreach (['BUY_GOLD', 'SALE_GOLD', 'WITHDRAW_GOLD'] as $type) {
             for ($index = 0; $index < 7; $index++) {
                 $key = $type.'-'.$index;
                 $transaction = ['survey_version_id' => $version, 'transaction_id' => $key, 'transaction_type' => $type,
@@ -208,8 +209,8 @@ class CustomerFeedbackApiTest extends FeedbackTest
                 }
             }
         }
-        $this->assertDatabaseCount('feedback_responses', 14);
-        $this->assertDatabaseCount('feedback_invitations', 14);
+        $this->assertDatabaseCount('feedback_responses', 21);
+        $this->assertDatabaseCount('feedback_invitations', 21);
 
         config(['feedback.test_unlimited_popup' => false]);
         $transaction['transaction_id'] = 'limits-restored';

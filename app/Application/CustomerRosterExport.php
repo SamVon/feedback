@@ -3,7 +3,6 @@
 namespace App\Application;
 
 use App\Models\User;
-use Carbon\CarbonImmutable;
 use Illuminate\Database\Eloquent\Builder;
 use Mpdf\Mpdf;
 use Mpdf\Output\Destination;
@@ -14,27 +13,20 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 final class CustomerRosterExport
 {
-    public function download(User $user, Builder $query, string $format, string $source = 'complete'): StreamedResponse
+    public function download(User $user, Builder $query, string $format, string $source = 'complete', ?array $columns = null): StreamedResponse
     {
         Access::check($user, 'customers.read');
         Access::check($user, 'report.export');
         abort_unless(in_array($format, ['xlsx', 'pdf'], true), 422);
-        $identity = $user->can('customer_identity.read');
-        $answers = $user->can('feedback.read');
-        $headers = [__('feedback.customer_user_id')];
-        if ($identity) {
-            $headers = [...$headers, __('feedback.name'), __('feedback.customer')];
-        }
-        $headers = [...$headers, __('feedback.response_status'), __('feedback.responses'), __('feedback.customer_latest_response')];
-        if ($answers) {
-            $headers = [...$headers, __('feedback.survey'), __('feedback.rating'), __('feedback.customer_latest_feedback')];
-        }
+        $columns = TableExportColumns::resolve($user, 'customers', $columns);
+        $locale = app()->getLocale();
+        $headers = TableExportColumns::headers('customers', $columns, $locale);
         $query = clone $query;
         $snapshot = app(Customers::class)->snapshot($user, $source)['selected'];
         $complete = $snapshot?->status === 'complete';
-        Audit::record((string) $user->id, 'customers.export', 'cohort', $snapshot?->id ?? '', ['format' => $format, 'customer_source' => $source]);
+        Audit::record((string) $user->id, 'customers.export', 'cohort', $snapshot?->id ?? '', ['format' => $format, 'customer_source' => $source, 'columns' => $columns]);
 
-        return response()->streamDownload(function () use ($query, $headers, $identity, $answers, $complete, $format): void {
+        return response()->streamDownload(function () use ($query, $headers, $columns, $locale, $complete, $format): void {
             $book = $format === 'xlsx' ? new Spreadsheet : null;
             $pdf = $format === 'pdf' ? new Mpdf(['tempDir' => storage_path('app/private/mpdf'), 'format' => 'A4-L', 'default_font' => 'dhyana', 'default_font_size' => 9]) : null;
             $sheet = $book?->getActiveSheet()->setTitle('Customers');
@@ -45,36 +37,35 @@ final class CustomerRosterExport
                 $pdf->SetHTMLFooter('<div style="text-align:right">Easy Gold · {PAGENO}/{nbpg}</div>');
             }
             $index = 2;
+            $pdfRows = [];
             try {
                 foreach ($query->orderBy('cohort_members.actor_user_id')->lazy(200) as $member) {
-                    $status = ! $complete || ! $member->identity_complete ? 'incomplete' : ($member->response_count > 0 ? 'answered' : 'unanswered');
-                    $row = [$member->actor_user_id];
-                    if ($identity) {
-                        $row = [...$row, $member->display_name, $member->phone];
-                    }
-                    $row = [...$row, __('feedback.'.$status), (string) $member->response_count, $member->latest_at ? CarbonImmutable::parse($member->latest_at, 'UTC')->setTimezone('Asia/Vientiane')->format('d/m/Y H:i') : '—'];
-                    if ($answers) {
-                        $response = $member->latestFilteredResponse;
-                        $labels = $response?->answers->flatMap(fn ($answer) => collect([$answer->text_value])->filter()->merge($answer->options->map(fn ($option) => $option->label[app()->getLocale()] ?? $option->label['en'])))->implode("\n");
-                        $row = [...$row, $response?->version?->survey?->name, $response?->answers->firstWhere('rating_value', '!=', null)?->rating_value, $labels];
-                    }
+                    $row = TableExportColumns::customerRow($member, $columns, $index - 1, $locale, $complete);
                     if ($sheet) {
                         foreach ($row as $column => $value) {
-                            $sheet->setCellValueExplicit([$column + 1, $index], (string) ($value ?? ''), DataType::TYPE_STRING);
+                            $sheet->setCellValueExplicit([$column + 1, $index], $value ?? '', is_int($value) ? DataType::TYPE_NUMERIC : DataType::TYPE_STRING);
                         }
                     }
                     if ($pdf) {
-                        $pdf->WriteHTML(view('exports.customers', ['headers' => $headers, 'row' => $row])->render());
+                        $pdfRows[] = $row;
+                        if (count($pdfRows) === 50) {
+                            $pdf->WriteHTML(view('exports.customers', ['headers' => $headers, 'rows' => $pdfRows])->render());
+                            $pdfRows = [];
+                        }
                     }
                     $index++;
                 }
                 if ($book) {
                     $sheet->getStyle('A1:'.$sheet->getHighestColumn().'1')->getFont()->setBold(true);
                     $sheet->setAutoFilter($sheet->calculateWorksheetDimension());
+                    $sheet->getStyle($sheet->calculateWorksheetDimension())->getAlignment()->setWrapText(true);
+                    foreach ($sheet->getColumnIterator() as $column) {
+                        $sheet->getColumnDimension($column->getColumnIndex())->setWidth(26);
+                    }
                     (new Xlsx($book))->save('php://output');
                 } else {
-                    if ($index === 2) {
-                        $pdf->WriteHTML(view('exports.customers', ['headers' => $headers, 'row' => []])->render());
+                    if ($pdfRows !== [] || $index === 2) {
+                        $pdf->WriteHTML(view('exports.customers', ['headers' => $headers, 'rows' => $pdfRows])->render());
                     }
                     echo $pdf->Output('', Destination::STRING_RETURN);
                 }

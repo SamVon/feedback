@@ -12,15 +12,19 @@ use Illuminate\Support\Facades\Storage;
 
 final class Exports
 {
-    public function create(User $user, array $filters, string $format = 'csv', ?Builder $membership = null): ExportJob
+    public function create(User $user, array $filters, string $format = 'csv', ?Builder $membership = null, ?array $tableLayout = null): ExportJob
     {
         Access::check($user, 'report.export');
         Access::check($user, 'feedback.read');
         abort_unless(in_array($format, ['csv', 'xlsx', 'pdf'], true), 422, 'Unsupported export format.');
         $filters = ReportFilters::validate($filters);
+        if ($tableLayout !== null) {
+            $tableLayout = ['columns' => TableExportColumns::resolve($user, 'feedback', $tableLayout['columns'] ?? []), 'sort_direction' => $tableLayout['sort_direction'] ?? 'desc'];
+            abort_unless(in_array($tableLayout['sort_direction'], ['asc', 'desc'], true), 422);
+        }
 
-        return DB::transaction(function () use ($user, $filters, $format, $membership) {
-            $job = ExportJob::create(['user_id' => $user->id, 'filters' => $filters, 'format' => $format, 'locale' => app()->getLocale(), 'snapshot_at' => now(), 'expires_at' => now()->addDay(), 'status' => 'queued']);
+        return DB::transaction(function () use ($user, $filters, $format, $membership, $tableLayout) {
+            $job = ExportJob::create(['user_id' => $user->id, 'filters' => $filters, 'format' => $format, 'locale' => app()->getLocale(), 'snapshot_at' => now(), 'expires_at' => now()->addDay(), 'status' => 'queued', 'table_layout' => $tableLayout]);
             // Freeze membership in one statement, so delayed/retried workers never add newer responses.
             DB::table('export_job_responses')->insertUsing(
                 ['export_job_id', 'feedback_response_id'],
@@ -46,6 +50,9 @@ final class Exports
             Access::check($user, 'analytics.read');
         }
         abort_unless($job->user_id === $user->id, 403);
+        if ($job->table_layout !== null) {
+            TableExportColumns::resolve($user, 'feedback', $job->table_layout['columns']);
+        }
         abort_unless($job->status === 'ready' && $job->expires_at->isFuture(), 410, 'Export unavailable or expired.');
         abort_unless(Storage::disk('local')->exists($job->file_ref), 404);
         Audit::record((string) $user->id, 'export.download', 'export', $job->id);

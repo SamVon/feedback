@@ -41,6 +41,8 @@ class AdminPanelProvider extends PanelProvider
             ->defaultThemeMode(ThemeMode::Light)
             ->darkMode(false)
             ->sidebarWidth('18rem')
+            ->sidebarCollapsibleOnDesktop()
+            ->collapsedSidebarWidth('4.5rem')
             ->maxContentWidth(Width::Full)
             ->homeUrl(fn () => FeedbackCenter::getUrl())
             ->userMenu(false)
@@ -70,6 +72,7 @@ class AdminPanelProvider extends PanelProvider
             ->brandLogoHeight('8rem')
             ->favicon(asset('images/easy-gold-mark.svg'))
             ->renderHook('panels::head.end', fn () => view('filament.partials.theme'))
+            ->renderHook('panels::sidebar.logo.after', fn () => view('filament.partials.sidebar-mark'))
             ->renderHook('panels::topbar.end', fn () => view('filament.partials.account-bar'))
             ->colors([
                 'primary' => Color::hex('#ad3535'),
