@@ -2357,7 +2357,8 @@
             "items": {
               "type": "string",
               "enum": [
-                "auto_prompt"
+                "auto_prompt",
+                "always_on"
               ]
             }
           },
@@ -2518,7 +2519,7 @@
           "rating_reasons_required",
           "rating_reasons"
         ],
-        "description": "comment มีเฉพาะ rating และใช้แสดงใน auto_prompt เท่านั้น; rating_reasons=[] เมื่อไม่เปิดเหตุผล; IDs ผูกกับ version"
+        "description": "comment มีเฉพาะ rating ใช้ได้ทั้ง auto_prompt และ always_on; rating_reasons=[] เมื่อไม่เปิดเหตุผล; IDs ผูกกับ version"
       },
       "AppConfig": {
         "type": "object",
@@ -2783,7 +2784,7 @@
           "question_id"
         ],
         "additionalProperties": false,
-        "description": "ชนิดคำถามเป็นตัวกำหนด field ที่อนุญาต: rating ต้องมีคะแนน integer; rating auto_prompt รับ text_value optional; always_on rating ไม่รับ text_value; choice ต้องมี option_ids อย่างน้อย 1; text ต้องมีข้อความไม่ว่าง. Server ตรวจ required/max_length/max_choices/option ownership/คะแนนจาก published version"
+        "description": "ชนิดคำถามเป็นตัวกำหนด field ที่อนุญาต: rating ต้องมีคะแนน integer; rating ทั้ง auto_prompt และ always_on รับ text_value optional ตาม max_length ของคำถาม; choice ต้องมี option_ids อย่างน้อย 1; text ต้องมีข้อความไม่ว่าง. Server ตรวจ required/max_length/max_choices/option ownership/คะแนนจาก published version"
       },
       "Submission": {
         "type": "object",
@@ -2887,7 +2888,7 @@
           "submitted_at",
           "answers"
         ],
-        "description": "auto_prompt ต้องมี invitation ของ caller/actor/version นี้; always_on ต้องไม่มี invitation. ห้าม transaction_context; question_id ต้องไม่ซ้ำ. ไม่ส่ง text_value ใน rating ของ always_on"
+        "description": "auto_prompt ต้องมี invitation ของ caller/actor/version นี้; always_on ต้องไม่มี invitation. ห้าม transaction_context; question_id ต้องไม่ซ้ำ. rating ของทั้งสองช่องทางรับ text_value เป็น comment optional"
       },
       "ResponseReceipt": {
         "type": "object",

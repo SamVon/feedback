@@ -38,3 +38,7 @@ Thumbs.db
 
 # Docker staging secrets
 .env.docker
+
+# Generated deployable release bundle
+/dist/
+.build-dist.sh

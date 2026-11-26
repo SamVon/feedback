@@ -1,5 +1,23 @@
 # Easy Gold Feedback Service & Staff Web
 
+## Deploy an image with Make
+
+For the existing `~/Downloads/easy-gold-feedback.tar`, run `make deploy-file SERVER_ADDRESS=YOUR_SERVER_IP`; override `IMAGE_FILE=/absolute/path/to/image.tar` if needed. This compresses the existing archive without rebuilding or resaving the image and leaves the original `.tar` intact. Its image name must match REGISTRY:VERSION. For an image already built as `easy-gold-feedback:local` but not saved, run `make deploy-image SERVER_ADDRESS=YOUR_SERVER_IP`. To build a new image first, run `make deploy SERVER_ADDRESS=YOUR_SERVER_IP VERSION=YOUR_RELEASE_TAG`. The defaults are `REGISTRY=easy-gold-feedback`, `VERSION=local`, `PLATFORM=linux/amd64`, `SSH_USER=deploy` and `REMOTE_DIR=/home/deploy/easygold-backend/docker/site/feedback`.
+
+The Makefile saves a compressed Docker image to `dist/deploy/app.tgz`, writes its checksum, uploads it with `compose.deploy.yaml`, `deploy-test.sh` and `.env.docker.example`, and runs the deployment script over SSH. The image-only Compose file never builds on the server. Do not unpack `app.tgz` as application source; `docker image load` reads this image archive. `make save` only prepares the archive. `make upload SERVER_ADDRESS=YOUR_SERVER_IP` and `make run-deploy SERVER_ADDRESS=YOUR_SERVER_IP` run the remaining steps separately. The local archive is deleted only after successful deployment.
+
+Configure the server's `.env.docker` before deployment can finish. A missing file is initialized from the example without overwriting an existing file; deployment then stops for configuration. Fill the database passwords, APP_URL and customer JWT secret. For a new empty database only, generate APP_KEY with `FEEDBACK_IMAGE=easy-gold-feedback:local docker compose --env-file .env.docker -f compose.deploy.yaml run --rm --no-deps web php artisan key:generate --show`, then save the value in `.env.docker`. Substitute the release image tag when using another VERSION. Preserve the existing key when importing an existing database.
+
+The server script validates the archive and image architecture, applies migrations, recreates web/worker/scheduler and checks `/up`. It retains the existing `.env.docker`, uploads and database volumes, and does not alter Caddy or the other backend services. Its default Compose project name is `easy-gold-feedback`; deployments using another existing project name must set `FEEDBACK_PROJECT_NAME` when invoking the script. Application health does not verify JWT configuration, published survey content or the staff authentication integration described below.
+
+## Uploadable dist
+
+Run `bash build-dist.sh` from the source checkout on the developer machine. It produces `dist/feedback-service/`, `dist/feedback-service-dist.tar.gz` and `dist/SHA256SUMS`. The release includes Laravel code, production Composer dependencies, compiled Vite/Filament assets, migrations and Docker configuration. It excludes `.env`, database contents, uploaded files, exports, logs, sessions and development dependencies.
+
+Upload the archive to the server, extract it with `tar -xzf feedback-service-dist.tar.gz`, and run the Docker staging commands below inside the extracted `feedback-service` directory. The generated Dockerfile uses the included dependencies and assets, so the server does not need Node or Composer. Docker still builds the PHP/Apache runtime image. Keep an existing `.env.docker`, APP_KEY and data volumes on updates; extract new releases into a separate directory before switching the deployment.
+
+This is a Laravel release, not a static HTML site. An existing Caddy server must reverse-proxy to the running application container. `Caddyfile.example` is an additional site block for host-installed Caddy; merge it into the existing configuration rather than replacing other sites. If Caddy is in Docker, use a shared Docker network and the appropriate upstream service address. The `/up` endpoint checks that the application boots; it does not establish that the database contains published surveys, rules or staff accounts. The staff authentication limitation below still applies to this release.
+
 ## Docker staging
 
 Docker Compose runs Apache/PHP, a queue worker, a scheduler and MySQL 8.4. Docker and the Compose plugin are required. On the staging server, copy `.env.docker.example` to `.env.docker`, set a unique database password and MySQL root password, set `APP_URL` to the HTTPS URL and configure the staging customer JWT secret and any service-token hashes. Keep this file private and never commit it. Use test credentials and an isolated staging database.

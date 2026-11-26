@@ -77,7 +77,7 @@ final class SubmitFeedback
                 $field = ['rating' => 'rating_value', 'text' => 'text_value', 'choice' => 'option_ids'][$question->type];
                 $withReasons = $question->type === 'rating' && $question->rating_reasons_enabled;
                 $allowedFields = $withReasons ? ['question_id', 'rating_value', 'option_ids'] : ['question_id', $field];
-                $withComment = $question->type === 'rating' && $data['source'] === 'auto_prompt';
+                $withComment = $question->type === 'rating';
                 if ($withComment) {
                     $allowedFields[] = 'text_value';
                     abort_if(mb_strlen($answer['text_value'] ?? '') > $question->max_length, 422, 'Rating comment is too long.');

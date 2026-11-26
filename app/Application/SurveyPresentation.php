@@ -19,7 +19,7 @@ final class SurveyPresentation
         $data['channels'] = $question->type === 'rating' ? ['auto_prompt', 'always_on'] : ['always_on'];
         if ($question->type === 'rating') {
             $data['comment'] = [
-                'channels' => ['auto_prompt'], 'field' => 'text_value', 'required' => false,
+                'channels' => ['auto_prompt', 'always_on'], 'field' => 'text_value', 'required' => false,
                 'max_length' => $question->max_length,
                 'label' => ['en' => 'Additional comments', 'lo' => 'ຄຳແນະນຳເພີ່ມເຕີມ'],
             ];

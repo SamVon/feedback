@@ -622,13 +622,14 @@ class FeedbackUxTest extends TestCase
             ->assertJsonPath('app_config.questions.0.comment.label.lo', 'ຄຳແນະນຳເພີ່ມເຕີມ')
             ->assertJsonPath('app_config.questions.0.comment.required', false)
             ->assertJsonPath('app_config.questions.0.comment.max_length', 500)
-            ->assertJsonPath('app_config.questions.0.comment.channels', ['auto_prompt'])
+            ->assertJsonPath('app_config.questions.0.comment.channels', ['auto_prompt', 'always_on'])
             ->assertJsonPath('app_config.source', 'auto_prompt')
             ->assertJsonPath('app_config.survey_code', 'ux')
             ->assertJsonPath('app_config.survey_version', 2)
             ->assertJsonPath('app_config.published_at', now()->format('Y-m-d\TH:i:s\Z'))
             ->assertJsonPath('app_config.rating_levels', [5, 4, 3, 2, 1]);
-        $this->getJson('/internal/v1/feedback/config?survey_code=ux')->assertOk()->assertJsonPath('app_config.source', 'always_on')->assertJsonCount(2, 'app_config.questions');
+        $this->getJson('/internal/v1/feedback/config?survey_code=ux')->assertOk()->assertJsonPath('app_config.source', 'always_on')->assertJsonCount(2, 'app_config.questions')
+            ->assertJsonPath('app_config.questions.0.comment.channels', ['auto_prompt', 'always_on'])->assertJsonPath('survey.questions.0.comment.channels', ['auto_prompt', 'always_on']);
         $payload = $this->payload($version);
         $payload['source'] = 'auto_prompt';
         $payload['invitation_id'] = $this->eligibility($version, 'comment')->assertCreated()->json('invitation_id');
@@ -668,13 +669,13 @@ class FeedbackUxTest extends TestCase
             }
             $this->send($optional, $case)->assertCreated();
         }
-        $alwaysOn = $this->payload($version, 'wrong-channel');
-        $alwaysOn['answers'][0]['text_value'] = 'Use a separate text question on Feedback';
-        $this->send($alwaysOn, 'wrong-channel')->assertUnprocessable();
+        $alwaysOn = $this->payload($version, 'feedback-comment');
+        $alwaysOn['answers'][0]['text_value'] = 'Comment on Feedback page';
+        $this->send($alwaysOn, 'feedback-comment')->assertCreated();
         $alwaysOn = $this->payload($version, 'empty-text-question');
         $alwaysOn['answers'][] = ['question_id' => $version->questions->firstWhere('type', 'text')->id, 'text_value' => null];
         $this->send($alwaysOn, 'empty-text-question')->assertUnprocessable();
-        $this->assertDatabaseCount('feedback_responses', 4);
-        $this->assertDatabaseCount('feedback_answers', 4);
+        $this->assertDatabaseCount('feedback_responses', 5);
+        $this->assertDatabaseCount('feedback_answers', 5);
     }
 }

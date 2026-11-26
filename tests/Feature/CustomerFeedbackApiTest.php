@@ -7,6 +7,7 @@ use App\Application\ChannelPolicy;
 use App\Filament\Resources\Pages\ListCustomerServices;
 use App\Models\RuleVersion;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\TestWith;
 
 class CustomerFeedbackApiTest extends FeedbackTest
 {
@@ -96,9 +97,61 @@ class CustomerFeedbackApiTest extends FeedbackTest
         foreach ($surveys as $index => $survey) {
             $this->assertArrayNotHasKey('rating_levels', $survey);
             $rating = collect($survey['questions'])->firstWhere('type', 'rating');
+            $this->assertSame(['auto_prompt', 'always_on'], $rating['comment']['channels']);
             $payload = ['client_submission_id' => 'group-'.$index, 'survey_version_id' => $survey['survey_version_id'], 'source' => 'always_on', 'submitted_at' => now()->utc()->format('Y-m-d\TH:i:s\Z'), 'answers' => [['question_id' => $rating['id'], 'rating_value' => 5]]];
             $this->withHeaders($headers + ['Idempotency-Key' => 'group-key-'.$index])->postJson('/api/v1/feedback/responses', $payload)->assertCreated();
         }
+    }
+
+    public function test_config_exposes_rating_comment_for_popup_and_feedback_page(): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token())->getJson('/api/v1/feedback/config?source=auto_prompt')->assertOk()
+            ->assertJsonPath('questions.0.comment.channels', ['auto_prompt', 'always_on'])
+            ->assertJsonPath('questions.0.comment.field', 'text_value');
+
+        foreach (['', '?source=always_on', '?source=always_on&survey_code=experience'] as $query) {
+            $this->getJson('/api/v1/feedback/config'.$query)->assertOk()
+                ->assertJsonPath('source', 'always_on')
+                ->assertJsonPath('questions.0.type', 'rating')
+                ->assertJsonPath('questions.0.comment.channels', ['auto_prompt', 'always_on'])
+                ->assertJsonPath('questions.1.type', 'text');
+        }
+    }
+
+    public function test_feedback_page_stores_rating_comment_and_text_answer_and_replays_once(): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token());
+        $payload = $this->payload('page-comment');
+        $payload['answers'][0]['text_value'] = str_repeat('ກ', 100);
+        $payload['answers'][] = ['question_id' => $this->survey->questions()->where('type', 'text')->firstOrFail()->id, 'text_value' => 'Separate text answer'];
+
+        $receipt = $this->withHeader('Idempotency-Key', 'page-comment')->postJson('/api/v1/feedback/responses', $payload)->assertCreated()->json();
+        $this->postJson('/api/v1/feedback/responses', $payload)->assertOk()->assertExactJson($receipt);
+        $this->assertDatabaseCount('feedback_responses', 1);
+        $this->assertDatabaseCount('feedback_answers', 2);
+        $this->assertDatabaseHas('feedback_answers', ['feedback_response_id' => $receipt['response_id'], 'rating_value' => 5, 'text_value' => str_repeat('ກ', 100)]);
+        $this->assertDatabaseHas('feedback_answers', ['feedback_response_id' => $receipt['response_id'], 'text_value' => 'Separate text answer']);
+
+        $payload['answers'][0]['text_value'] = 'Changed comment';
+        $this->postJson('/api/v1/feedback/responses', $payload)->assertConflict();
+        $this->assertDatabaseCount('feedback_answers', 2);
+    }
+
+    #[TestWith([101])]
+    #[TestWith([['invalid']])]
+    public function test_feedback_page_rejects_invalid_rating_comment_without_saving(mixed $value): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $payload = $this->payload('invalid-page-comment');
+        $payload['answers'][0]['text_value'] = is_int($value) ? str_repeat('ກ', $value) : $value;
+
+        $this->withToken($this->token())->withHeader('Idempotency-Key', 'invalid-page-comment')
+            ->postJson('/api/v1/feedback/responses', $payload)->assertUnprocessable();
+
+        $this->assertDatabaseCount('feedback_responses', 0);
+        $this->assertDatabaseCount('feedback_answers', 0);
     }
 
     public function test_publisher_can_publish_draft_and_submitted_survey_without_approval(): void
