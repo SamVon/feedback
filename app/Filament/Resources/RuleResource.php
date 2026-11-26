@@ -7,8 +7,8 @@ use App\Application\Changes;
 use App\Application\ChannelPolicy;
 use App\Application\PopupPolicy;
 use App\Application\ReportFilters;
-use App\Filament\Support\FilterFields;
 use App\Filament\Resources\Pages\ListRules;
+use App\Filament\Support\FilterFields;
 use App\Filament\Support\ReadOnlyResource;
 use App\Filament\Support\RuleEditorAction;
 use App\Models\DailyFeedbackLimit;
@@ -16,6 +16,7 @@ use App\Models\RuleVersion;
 use Carbon\CarbonImmutable;
 use Filament\Actions\Action;
 use Filament\Forms\Components\Hidden;
+use Filament\Support\Enums\Width;
 use Filament\Tables\Columns\TextColumn;
 use Filament\Tables\Enums\FiltersLayout;
 use Filament\Tables\Filters\Filter;
@@ -130,11 +131,17 @@ class RuleResource extends ReadOnlyResource
             ->filters([static::historyDateFilter('updated_at')], layout: FiltersLayout::AboveContent)
             ->paginated([10, 25, 50])
             ->recordActions([
-                Action::make('details')->label(__('feedback.details'))->modalContent(function (RuleVersion $record) {
-                    Access::check(auth()->user(), 'rules.read');
+                Action::make('details')->label(__('feedback.details'))
+                    ->modalHeading(__('feedback.rules_detail_title'))
+                    ->modalDescription(fn (RuleVersion $record): string => 'v'.$record->version.' · '.__('feedback.rules_states.'.$record->status))
+                    ->modalWidth(Width::ThreeExtraLarge)
+                    ->extraModalWindowAttributes(['class' => 'eg-rule-detail-modal'])
+                    ->modalCancelActionLabel(__('feedback.rules_detail_close'))
+                    ->modalContent(function (RuleVersion $record) {
+                        Access::check(auth()->user(), 'rules.read');
 
-                    return view('filament.partials.popup-rules', ['rules' => PopupPolicy::normalizeRules($record->rules), 'legacy' => ! isset($record->rules['transaction_rules'])]);
-                })->modalSubmitAction(false),
+                        return view('filament.partials.popup-rules', ['rules' => PopupPolicy::normalizeRules($record->rules)]);
+                    })->modalSubmitAction(false),
                 RuleEditorAction::make('editDraft')->label(__('feedback.edit_draft'))
                     ->visible(fn (RuleVersion $record): bool => $record->status === 'draft'),
                 RuleEditorAction::make('newVersion')->label(__('feedback.new_version'))

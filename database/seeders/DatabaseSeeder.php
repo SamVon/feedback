@@ -8,6 +8,6 @@ class DatabaseSeeder extends Seeder
 {
     public function run(): void
     {
-        $this->command?->info('No default accounts or data. Use DemoSeeder explicitly for local fixtures.');
+        $this->call(DefaultFeedbackSettingsSeeder::class);
     }
 }
