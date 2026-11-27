@@ -103,6 +103,7 @@ final class SubmitFeedback
                 'caller' => $caller, 'client_submission_id' => $data['client_submission_id'], 'payload_hash' => Idempotency::hash($payload),
                 'actor_user_id' => $data['actor_user_id'], 'one_id' => $data['one_id'] ?? null, 'survey_version_id' => $version->id, 'source' => $data['source'],
                 'customer_name' => $customerProfile['name'] ?? null, 'customer_phone' => $customerProfile['phone'] ?? null,
+                'gender' => $data['gender'] ?? null,
                 'invitation_id' => $invitation?->id, 'transaction_context_id' => $invitation?->transaction_context_id, 'submitted_at' => $data['submitted_at'], 'received_at' => $receivedAt,
                 'app_version' => $data['metadata']['app_version'] ?? null, 'os' => $data['metadata']['os'] ?? null,
             ]);

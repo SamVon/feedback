@@ -15,6 +15,7 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\TestResponse;
 use Illuminate\Validation\ValidationException;
 use Livewire\Livewire;
+use PHPUnit\Framework\Attributes\TestWith;
 use Tests\TestCase;
 
 class PopupPolicyTest extends TestCase
@@ -234,24 +235,30 @@ class PopupPolicyTest extends TestCase
         $this->assertSame(Idempotency::hash($legacy), Idempotency::hash($version->fresh()->rules));
     }
 
-    public function test_withdraw_gold_can_be_enabled_and_published_without_enabling_other_transactions(): void
+    #[TestWith(['WITHDRAW_GOLD'])]
+    #[TestWith(['INVESTMENT'])]
+    #[TestWith(['AUTO_BUY_SALE_GOLD'])]
+    #[TestWith(['GOLDEN_GIFT'])]
+    public function test_transaction_can_be_enabled_and_published_without_enabling_other_transactions(string $type): void
     {
         $this->prepare();
         $this->actingAs($this->staff);
         $version = RuleVersion::firstOrFail();
-        Livewire::test(ListRules::class)->callTableAction('newVersion', $version, data: ['enabled_transaction_types' => ['WITHDRAW_GOLD']])
+        $originalRules = $version->rules;
+        Livewire::test(ListRules::class)->callTableAction('newVersion', $version, data: ['enabled_transaction_types' => [$type]])
             ->assertHasNoTableActionErrors();
         $draft = RuleVersion::where('status', 'draft')->firstOrFail();
         $rules = collect($draft->rules['transaction_rules'])->keyBy('transaction_type');
-        $this->assertTrue($rules['WITHDRAW_GOLD']['enabled']);
-        $this->assertFalse($rules['BUY_GOLD']['enabled']);
-        $this->assertFalse($rules['SALE_GOLD']['enabled']);
+        $this->assertCount(6, $rules);
+        $this->assertTrue($rules[$type]['enabled']);
+        $this->assertCount(1, $rules->where('enabled', true));
+        $this->assertSame($originalRules, $version->fresh()->rules);
         foreach (['submit', 'approve', 'publish'] as $action) {
             app(Changes::class)->transition($this->staff, 'rules', $draft->id, 1, $action);
         }
-        $id = $this->eligibility('WITHDRAW_GOLD', 'withdraw')->assertCreated()->assertJsonPath('eligible', true)->json('invitation_id');
+        $id = $this->eligibility($type, 'withdraw')->assertCreated()->assertJsonPath('eligible', true)->json('invitation_id');
         $this->apiPost('responses', $this->response($id), 'withdraw-answer')->assertCreated();
-        $this->eligibility('WITHDRAW_GOLD', 'withdraw-next')->assertJsonPath('reason', 'cooldown_active')->assertJsonPath('successful_response_count', 1);
+        $this->eligibility($type, 'withdraw-next')->assertJsonPath('reason', 'cooldown_active')->assertJsonPath('successful_response_count', 1);
         $this->eligibility('BUY_GOLD', 'buy-disabled')->assertJsonPath('reason', 'trigger_disabled');
     }
 

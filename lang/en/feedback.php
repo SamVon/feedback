@@ -1,6 +1,17 @@
 <?php
 
 return [
+    'export_dashboard_png' => 'Download PNG',
+    'export_dashboard_working' => 'Preparing the dashboard image…',
+    'export_dashboard_error' => 'Could not create the dashboard image. Wait for the charts to load and try again.',
+    'export_dashboard_success' => 'Dashboard PNG download started.',
+    'gender' => 'Gender',
+    'gender_values' => ['Male' => 'Male', 'Female' => 'Female'],
+    'gender_unspecified' => 'Unspecified',
+    'respondent_gender_title' => 'Respondents by gender',
+    'respondents' => 'Respondents',
+    'respondent_gender_hint' => 'Each account is counted once within the selected filters, using its latest reported gender in that period. Missing gender is shown as unspecified.',
+    'respondent_gender_chart' => 'Respondents by gender: female :female, male :male, unspecified :unspecified.',
     'customer_detail_title' => 'Customer rating and feedback details',
     'customer_rating_answers' => 'Rating answers',
     'customer_other_answers' => 'Other questions',
@@ -137,7 +148,7 @@ return [
     'rules_form_period' => 'Question display period',
     'rules_form_transactions' => 'Transactions',
     'rules_form_switch_hint' => 'When enabled, the app can show questions after a successful selected transaction.',
-    'rules_form_transaction_hint' => 'Feedback supports buying, selling, and withdrawing gold.',
+    'rules_form_transaction_hint' => 'Select the transactions that can trigger a feedback pop-up after completion.',
     'rules_advanced' => 'Advanced settings',
     'rules_draft_saved' => 'Rules saved as a draft',
     'rules_stale' => 'These rules changed while you were editing. Reopen the version and try again.',

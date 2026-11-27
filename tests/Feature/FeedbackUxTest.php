@@ -190,7 +190,7 @@ class FeedbackUxTest extends TestCase
             ->callMountedTableAction()->assertHasNoTableActionErrors()->assertTableActionNotMounted('draft');
         $draft = RuleVersion::where('status', 'draft')->firstOrFail();
         $this->assertEquals(['starts_at' => '2026-11-30T17:00:00Z', 'ends_at' => '2026-12-07T17:00:00Z'], $draft->rules['popup_schedule']);
-        $this->assertSame([true, false], array_column($draft->rules['transaction_rules'], 'enabled'));
+        $this->assertSame([true, false, false, false, false, false], array_column($draft->rules['transaction_rules'], 'enabled'));
         $history = Livewire::test(ListRules::class);
         $this->assertTrue($history->instance()->publishedRule()->is($published));
         $history->filterTable('edited_at', ['from' => now('Asia/Vientiane')->subMinutes(30)->format('Y-m-d H:i:s')])

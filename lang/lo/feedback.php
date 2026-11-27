@@ -1,6 +1,17 @@
 <?php
 
 return [
+    'export_dashboard_png' => 'ດາວໂຫຼດ PNG',
+    'export_dashboard_working' => 'ກຳລັງກຽມຮູບ Dashboard…',
+    'export_dashboard_error' => 'ບໍ່ສາມາດສ້າງຮູບ Dashboard ໄດ້. ກະລຸນາລໍຖ້າໃຫ້ກຣາຟໂຫຼດສຳເລັດ ແລ້ວລອງໃໝ່.',
+    'export_dashboard_success' => 'ເລີ່ມດາວໂຫຼດຮູບ Dashboard ແລ້ວ.',
+    'gender' => 'ເພດ',
+    'gender_values' => ['Male' => 'ຊາຍ', 'Female' => 'ຍິງ'],
+    'gender_unspecified' => 'ບໍ່ລະບຸເພດ',
+    'respondent_gender_title' => 'ຜູ້ຕອບແຍກຕາມເພດ',
+    'respondents' => 'ຜູ້ຕອບ',
+    'respondent_gender_hint' => 'ນັບແຕ່ລະບັນຊີຄັ້ງດຽວຕາມຕົວກອງ ໂດຍໃຊ້ເພດທີ່ລະບຸລ່າສຸດໃນໄລຍະນັ້ນ. ຖ້າບໍ່ມີຂໍ້ມູນ ຈະສະແດງເປັນບໍ່ລະບຸເພດ.',
+    'respondent_gender_chart' => 'ຜູ້ຕອບແຍກຕາມເພດ: ຍິງ :female, ຊາຍ :male, ບໍ່ລະບຸເພດ :unspecified.',
     'customer_detail_title' => 'ລາຍລະອຽດການໃຫ້ຄະແນນ ແລະ ຄຳຄິດເຫັນ',
     'customer_rating_answers' => 'ຄະແນນດາວ',
     'customer_other_answers' => 'ຄຳຖາມອື່ນໆ',
@@ -137,7 +148,7 @@ return [
     'rules_form_period' => 'ໄລຍະເວລາທີ່ສະແດງຄຳຖາມ',
     'rules_form_transactions' => 'ທຸລະກຳ',
     'rules_form_switch_hint' => 'ເມື່ອເປີດໃຊ້ງານ ແອັບສາມາດສະແດງຄຳຖາມຫຼັງຈາກທຸລະກຳທີ່ເລືອກສຳເລັດ.',
-    'rules_form_transaction_hint' => 'ຮອງຮັບການຕອບຄຳຖາມສຳລັບການຊື້ຄຳ, ການຂາຍຄຳ ແລະ ການຖອນຄຳ.',
+    'rules_form_transaction_hint' => 'ເລືອກປະເພດທຸລະກຳທີ່ໃຫ້ສະແດງຄຳຖາມຫຼັງຈາກທຸລະກຳສຳເລັດ.',
     'rules_advanced' => 'ຕັ້ງຄ່າເພີ່ມເຕີມ',
     'rules_draft_saved' => 'ບັນທຶກກົດເປັນຮ່າງແລ້ວ',
     'rules_stale' => 'ກົດຖືກປ່ຽນແລ້ວ. ກະລຸນາເປີດລຸ້ນນັ້ນອີກຄັ້ງ.',

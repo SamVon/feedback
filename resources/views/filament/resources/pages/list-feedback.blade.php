@@ -1,9 +1,13 @@
 <x-filament-panels::page>
     <div class="eg-customers-page eg-feedback-history-page">
         <nav class="eg-customer-detail-breadcrumb eg-feedback-breadcrumb" aria-label="{{ __('feedback.feedback_history') }}">
-            <a href="{{ \App\Filament\Pages\FeedbackCenter::getUrl() }}">{{ __('feedback.feedback_center') }}</a>
+            @if (\App\Filament\Pages\Dashboard::canAccess())
+                <a href="{{ \App\Filament\Pages\Dashboard::getUrl() }}">{{ __('feedback.dashboard') }}</a>
+            @else
+                <a href="{{ \App\Filament\Pages\FeedbackCenter::getUrl() }}">{{ __('feedback.feedback_center') }}</a>
+            @endif
             <span aria-hidden="true">›</span>
-            <span>{{ __('feedback.feedback_history') }}</span>
+            <span aria-current="page">{{ __('feedback.feedback_history') }}</span>
         </nav>
         @include('filament.partials.feedback-tabs', ['active' => 'feedback'])
         <section class="eg-customer-search-card eg-customer-list-card eg-feedback-sheet" aria-labelledby="feedback-history-heading">

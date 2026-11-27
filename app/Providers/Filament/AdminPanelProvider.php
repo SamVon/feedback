@@ -51,10 +51,10 @@ class AdminPanelProvider extends PanelProvider
                     ...(Dashboard::canAccess() ? Dashboard::getNavigationItems() : []),
                     ...array_map(
                         fn (NavigationItem $item): NavigationItem => $item->activeWhen(fn (): bool => ! original_request()->routeIs(
-                            Dashboard::getRouteName(),
                             AuditResource::getRouteBaseName().'.*',
                             CustomerServiceResource::getRouteBaseName().'.*',
                             Settings::getRouteName(),
+                            ...(Dashboard::canAccess() ? Dashboard::getNavigationItemActiveRoutePattern() : []),
                         )),
                         FeedbackCenter::getNavigationItems(),
                     ),

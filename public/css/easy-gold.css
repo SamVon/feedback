@@ -161,7 +161,11 @@
 @media (max-width: 640px) { .eg-rating-editor .eg-editor-card { padding: 16px; } .eg-editor-table th, .eg-editor-table td { padding: 12px 8px; } }
 
 /* Dashboard overview */
+.eg-dashboard-export-status { margin: 0; padding: 12px 16px; background: #eef5fb; color: #125f98; border-radius: 8px; font-size: 14px; }
+.eg-dashboard-export-status[hidden] { display: none; }
+.eg-dashboard-export-status[data-error] { background: #fff1f1; color: #a73232; }
 .eg-dashboard { --dashboard-blue: #125f98; display: grid; gap: 24px; }
+.eg-dashboard-top > .eg-dashboard-overview { border-top-left-radius: 0; }
 .eg-dashboard-tabs { display: flex; flex-wrap: wrap; gap: 1px; border-bottom: 1px solid #dfe4ea; }
 .eg-dashboard-tabs a { padding: 14px 22px; background: #f3f5f7; border: 1px solid #e1e5e9; border-radius: 6px 6px 0 0; color: #535d69; font-weight: 600; }
 .eg-dashboard-tabs a[aria-current] { background: white; color: #0785d0; border-bottom-color: white; }
@@ -188,6 +192,11 @@
 .eg-dashboard-ring strong { color: #273e54; font-size: 30px; font-weight: 700; }
 .eg-dashboard-ring span { font-size: 12px; color: #75818b; }
 .eg-dashboard-response-ring { background: #125f98; }
+.eg-dashboard-gender-table-wrap { flex: 1; min-width: 0; width: 100%; overflow-x: auto; }
+.eg-dashboard-gender-table { width: 100%; }
+.eg-dashboard-gender-table tbody th { font-weight: 500; color: #334155; }
+.eg-dashboard-gender-table td { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.eg-dashboard-gender-table tbody tr { border-bottom: 1px solid #edf0f3; }
 .eg-dashboard-totals { flex: 1; min-width: 0; }
 .eg-dashboard-totals > div { display: flex; justify-content: space-between; gap: 12px; padding: 15px 0; border-bottom: 1px solid #edf0f3; font-size: 13px; }
 .eg-dashboard-totals dd { font-weight: 700; color: var(--dashboard-blue); }
@@ -460,4 +469,49 @@
     .eg-rule-detail-dates > div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
     .eg-rule-detail-dates dd { margin: 0; text-align: right; }
     .eg-rule-detail-period, .eg-rule-detail-transaction { padding: 14px; }
+}
+
+/* Keep action labels and icons white, including hover and loading states. */
+.fi-btn,
+.fi-btn .fi-icon,
+.fi-icon-btn,
+.fi-icon-btn .fi-icon,
+.eg-logout,
+.eg-logout .fi-icon,
+.eg-popup-actions button,
+.eg-reason-grid button {
+    color: #fff !important;
+}
+
+/* Give formerly pale buttons enough contrast for their white content. */
+.fi-btn.fi-outlined,
+.fi-btn.fi-color-gray,
+.fi-btn:not(.fi-color),
+.fi-icon-btn,
+.eg-popup-actions button:first-child,
+.eg-reason-grid button {
+    background-color: #475569 !important;
+}
+.fi-btn.fi-outlined:hover,
+.fi-btn.fi-color-gray:hover,
+.fi-btn:not(.fi-color):hover,
+.fi-icon-btn:hover,
+.eg-popup-actions button:first-child:hover,
+.eg-reason-grid button:hover {
+    background-color: #334155 !important;
+}
+.fi-btn.fi-outlined.fi-color-primary,
+.eg-other-question-answers .fi-fo-table-repeater-add .fi-btn,
+.eg-logout {
+    background-color: #a73232 !important;
+}
+.fi-btn.fi-outlined.fi-color-primary:hover,
+.eg-other-question-answers .fi-fo-table-repeater-add .fi-btn:hover,
+.eg-logout:hover {
+    background-color: #882727 !important;
+}
+.eg-reason-grid button.is-selected,
+.eg-reason-grid button.is-selected:hover {
+    background-color: #17558c !important;
+    border-color: #17558c;
 }

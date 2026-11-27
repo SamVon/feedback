@@ -19,6 +19,7 @@ class SubmitFeedbackRequest extends FormRequest
             'client_submission_id' => 'required|string|max:100', 'actor_user_id' => 'required|string|max:100', 'one_id' => 'nullable|string|max:100',
             'survey_version_id' => 'required|uuid', 'source' => 'required|in:auto_prompt,always_on', 'invitation_id' => 'nullable|uuid',
             'submitted_at' => 'required|date_format:Y-m-d\TH:i:s\Z|before_or_equal:now',
+            'gender' => 'sometimes|nullable|string|in:Male,Female',
             'answers' => 'required|array|min:1|max:50', 'answers.*' => 'required|array:question_id,rating_value,text_value,option_ids',
             'answers.*.question_id' => 'required|uuid|distinct',
             'answers.*.rating_value' => 'sometimes|integer|between:1,5', 'answers.*.text_value' => 'sometimes|nullable|string|max:10000',

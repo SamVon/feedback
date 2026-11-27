@@ -2878,6 +2878,18 @@
             },
             "required": [],
             "additionalProperties": false
+          },
+          "gender": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "enum": [
+              "Male",
+              "Female",
+              null
+            ],
+            "description": "เพศจากโปรไฟล์ที่แอปส่งมา เป็น optional และไม่อ่านจาก JWT ต้องคง body เดิมเมื่อ retry"
           }
         },
         "required": [

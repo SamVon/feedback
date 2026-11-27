@@ -10,6 +10,8 @@ class Trend extends ChartWidget
 {
     use InteractsWithPageFilters;
 
+    protected static ?bool $isLazyLoaded = false;
+
     public static function canView(): bool
     {
         return auth()->user()?->can('analytics.read') ?? false;

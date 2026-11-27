@@ -3,6 +3,7 @@
 namespace App\Application;
 
 use App\Models\FeedbackAnswer;
+use App\Models\FeedbackResponse;
 use App\Models\Question;
 use App\Models\User;
 use Carbon\CarbonImmutable;
@@ -11,6 +12,31 @@ use Illuminate\Support\Facades\DB;
 
 final class Analytics
 {
+    /** Count each account once using its latest non-null gender within these filters. */
+    public function respondentGenders(User $user, array $filters): array
+    {
+        Access::check($user, 'analytics.read');
+        $responses = ReportFilters::query($filters);
+        $respondents = (clone $responses)->select('actor_user_id')->distinct();
+        $latestGender = (clone $responses)
+            ->whereColumn('feedback_responses.actor_user_id', 'respondents.actor_user_id')
+            ->select('gender')->reorder()->orderByRaw('gender IS NULL')
+            ->orderByDesc('received_at')->orderByDesc('id')->limit(1);
+
+        $counts = ['Female' => 0, 'Male' => 0, 'Unspecified' => 0];
+        foreach (FeedbackResponse::query()->fromSub($respondents, 'respondents')->selectSub($latestGender, 'gender')->cursor() as $response) {
+            $gender = $response->gender;
+            $counts[in_array($gender, ['Female', 'Male'], true) ? $gender : 'Unspecified']++;
+        }
+        $total = array_sum($counts);
+
+        return [
+            'total' => $total,
+            'counts' => $counts,
+            'percentages' => array_map(fn (int $count): ?float => $total ? round(100 * $count / $total, 1) : null, $counts),
+        ];
+    }
+
     public function summary(User $user, array $filters, ?Builder $members = null): array
     {
         Access::check($user, 'analytics.read');

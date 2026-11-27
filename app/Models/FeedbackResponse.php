@@ -6,12 +6,12 @@ class FeedbackResponse extends Record
 {
     protected function casts(): array
     {
-        return ['submitted_at' => 'immutable_datetime', 'received_at' => 'immutable_datetime', 'customer_name' => 'encrypted', 'customer_phone' => 'encrypted'];
+        return ['submitted_at' => 'immutable_datetime', 'received_at' => 'immutable_datetime', 'customer_name' => 'encrypted', 'customer_phone' => 'encrypted', 'gender' => 'encrypted'];
     }
 
     public $timestamps = false;
 
-    protected $hidden = ['customer_name', 'customer_phone'];
+    protected $hidden = ['customer_name', 'customer_phone', 'gender'];
 
     public function answers()
     {

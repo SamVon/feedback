@@ -4,13 +4,92 @@ namespace Tests\Feature;
 
 use App\Application\Changes;
 use App\Application\ChannelPolicy;
+use App\Application\Idempotency;
+use App\Application\PopupPolicy;
+use App\Filament\Resources\FeedbackResource;
 use App\Filament\Resources\Pages\ListCustomerServices;
+use App\Models\FeedbackResponse;
 use App\Models\RuleVersion;
+use App\Models\User;
 use Livewire\Livewire;
 use PHPUnit\Framework\Attributes\TestWith;
 
 class CustomerFeedbackApiTest extends FeedbackTest
 {
+    #[TestWith(['Male'])]
+    #[TestWith(['Female'])]
+    #[TestWith([null])]
+    #[TestWith([''])]
+    public function test_optional_gender_is_stored_and_submission_retries_keep_the_same_receipt(?string $gender): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token(['gender' => 'ignored-jwt-value']));
+        $payload = $this->payload('gender-submission');
+        $payload['gender'] = $gender;
+        $receipt = $this->withHeader('Idempotency-Key', 'gender-submit')->postJson('/api/v1/feedback/responses', $payload)->assertCreated()->json();
+        $response = FeedbackResponse::findOrFail($receipt['response_id']);
+        $this->assertSame($gender ?: null, $response->gender);
+        $this->assertArrayNotHasKey('gender', $response->toArray());
+        if ($gender) {
+            $this->assertNotSame($gender, $response->getRawOriginal('gender'));
+        }
+        $this->assertSame(['response_id', 'client_submission_id', 'status', 'received_at'], array_keys($receipt));
+        $this->postJson('/api/v1/feedback/responses', $payload)->assertOk()->assertExactJson($receipt);
+        $this->withHeader('Idempotency-Key', 'gender-retry-new-key')->postJson('/api/v1/feedback/responses', $payload)->assertOk()->assertExactJson($receipt);
+        $payload['gender'] = $gender === 'Male' ? 'Female' : 'Male';
+        $this->withHeader('Idempotency-Key', 'gender-submit')->postJson('/api/v1/feedback/responses', $payload)->assertConflict();
+        $this->withHeader('Idempotency-Key', 'changed-gender-new-key')->postJson('/api/v1/feedback/responses', $payload)->assertConflict();
+        $this->assertDatabaseCount('feedback_responses', 1);
+    }
+
+    public function test_omitted_gender_preserves_old_client_payload_hash_and_retries(): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token());
+        $payload = $this->payload('old-client');
+        $receipt = $this->withHeader('Idempotency-Key', 'old-client')->postJson('/api/v1/feedback/responses', $payload)->assertCreated()->json();
+        $response = FeedbackResponse::findOrFail($receipt['response_id']);
+        $this->assertNull($response->gender);
+        $payload['actor_user_id'] = 'customer-1';
+        $this->assertSame(Idempotency::hash($payload), $response->payload_hash);
+        $this->postJson('/api/v1/feedback/responses', $payload)->assertOk()->assertExactJson($receipt);
+    }
+
+    #[TestWith(['Unknown'])]
+    #[TestWith([['Male']])]
+    #[TestWith([true])]
+    #[TestWith([1])]
+    public function test_invalid_gender_returns_422_without_storing_feedback(mixed $gender): void
+    {
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $payload = $this->payload();
+        $payload['gender'] = $gender;
+        $this->withToken($this->token())->withHeader('Idempotency-Key', 'invalid-gender')
+            ->postJson('/api/v1/feedback/responses', $payload)->assertUnprocessable()->assertJsonValidationErrors('gender');
+        $this->assertDatabaseCount('feedback_responses', 0);
+        $this->assertDatabaseCount('feedback_answers', 0);
+        $this->assertDatabaseCount('idempotency_records', 0);
+    }
+
+    public function test_popup_accepts_gender_and_feedback_details_respect_identity_permissions(): void
+    {
+        $this->freezeTime();
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token())->withHeader('Idempotency-Key', 'gender-eligibility');
+        $invitation = $this->postJson('/api/v1/feedback/eligibility', ['survey_version_id' => $this->survey->id,
+            'transaction_id' => 'gender-buy', 'transaction_type' => 'BUY_GOLD', 'transaction_occurred_at' => now()->subMinute()->utc()->format('Y-m-d\TH:i:s\Z')])->assertCreated()->json('invitation_id');
+        $payload = $this->payload('gender-popup');
+        $payload['source'] = 'auto_prompt';
+        $payload['invitation_id'] = $invitation;
+        $payload['gender'] = 'Male';
+        $id = $this->withHeader('Idempotency-Key', 'gender-popup')->postJson('/api/v1/feedback/responses', $payload)->assertCreated()->json('response_id');
+        $this->assertSame('Male', FeedbackResponse::findOrFail($id)->gender);
+        $url = FeedbackResource::getUrl('view', ['record' => $id]);
+        $this->actingAs($this->staff)->get($url)->assertOk()->assertSee(__('feedback.gender_values.Male'));
+        $viewer = User::factory()->create(['active' => true, 'permissions' => ['feedback.read']]);
+        $this->actingAs($viewer)->get($url)->assertOk()->assertDontSee(__('feedback.gender_values.Male'));
+    }
+
     public function test_customer_service_switch_controls_mobile_config_and_new_answers_after_publication(): void
     {
         config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
@@ -220,6 +299,46 @@ class CustomerFeedbackApiTest extends FeedbackTest
         $this->withHeaders(['Authorization' => 'Bearer '.$this->token(), 'Idempotency-Key' => 'response-1'])->postJson('/api/v1/feedback/responses', $answer)->assertCreated();
         $this->assertDatabaseHas('feedback_responses', ['actor_user_id' => 'customer-1', 'invitation_id' => $invitation]);
         $this->withHeaders(['Authorization' => 'Bearer '.$this->token(['_id' => 'customer-2']), 'Idempotency-Key' => 'response-2'])->postJson('/api/v1/feedback/responses', $answer)->assertUnprocessable();
+    }
+
+    #[TestWith(['INVESTMENT'])]
+    #[TestWith(['AUTO_BUY_SALE_GOLD'])]
+    #[TestWith(['GOLDEN_GIFT'])]
+    public function test_additional_transaction_types_follow_published_rules_and_keep_independent_quotas(string $type): void
+    {
+        $this->freezeTime();
+        config(['feedback.customer_jwt_secret' => 'test-customer-secret']);
+        $this->withToken($this->token());
+        $transaction = ['survey_version_id' => $this->survey->id, 'transaction_id' => 'new-type-before',
+            'transaction_type' => $type, 'transaction_occurred_at' => now()->subMinute()->utc()->format('Y-m-d\TH:i:s\Z')];
+        $this->withHeader('Idempotency-Key', 'new-type-before')->postJson('/api/v1/feedback/eligibility', $transaction)
+            ->assertOk()->assertJsonPath('eligible', false)->assertJsonPath('reason', 'trigger_disabled');
+
+        $rules = $this->rule->rules;
+        $rules['transaction_rules'][] = ['transaction_type' => $type, 'enabled' => true];
+        $draft = app(Changes::class)->ruleDraft($this->staff, PopupPolicy::normalizeRules($rules));
+        app(Changes::class)->transition($this->staff, 'rules', $draft->id, 1, 'publish');
+        $transaction['transaction_id'] = 'new-type-first';
+        $invitation = $this->withHeader('Idempotency-Key', 'new-type-first')->postJson('/api/v1/feedback/eligibility', $transaction)
+            ->assertCreated()->assertJsonPath('transaction_type', $type)->assertJsonPath('successful_response_count', 0)->json('invitation_id');
+        $payload = $this->payload('new-type-answer');
+        $payload['source'] = 'auto_prompt';
+        $payload['invitation_id'] = $invitation;
+        $receipt = $this->withHeader('Idempotency-Key', 'new-type-answer')->postJson('/api/v1/feedback/responses', $payload)->assertCreated()->json();
+        $this->postJson('/api/v1/feedback/responses', $payload)->assertOk()->assertExactJson($receipt);
+        $this->assertDatabaseCount('feedback_responses', 1);
+        $this->assertDatabaseHas('transaction_contexts', ['transaction_type' => $type, 'actor_user_id' => 'customer-1']);
+
+        $transaction['transaction_id'] = 'new-type-next';
+        $this->withHeader('Idempotency-Key', 'new-type-next')->postJson('/api/v1/feedback/eligibility', $transaction)
+            ->assertOk()->assertJsonPath('reason', 'cooldown_active')->assertJsonPath('successful_response_count', 1);
+        $transaction['transaction_id'] = 'independent-buy';
+        $transaction['transaction_type'] = 'BUY_GOLD';
+        $this->withHeader('Idempotency-Key', 'independent-buy')->postJson('/api/v1/feedback/eligibility', $transaction)
+            ->assertCreated()->assertJsonPath('eligible', true)->assertJsonPath('successful_response_count', 0);
+        $transaction['transaction_type'] = 'UNKNOWN_TRANSACTION';
+        $this->withHeader('Idempotency-Key', 'unknown-type')->postJson('/api/v1/feedback/eligibility', $transaction)
+            ->assertUnprocessable()->assertJsonValidationErrors('transaction_type');
     }
 
     public function test_unlimited_popup_testing_allows_buy_sale_and_withdraw_but_preserves_owned_single_response(): void

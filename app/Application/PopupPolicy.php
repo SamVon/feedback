@@ -11,7 +11,10 @@ final class PopupPolicy
 
     public const COOLDOWN_DAYS = 30;
 
-    public const CUSTOMER_TRANSACTION_TYPES = ['BUY_GOLD', 'SALE_GOLD', 'WITHDRAW_GOLD'];
+    public const CUSTOMER_TRANSACTION_TYPES = [
+        'BUY_GOLD', 'SALE_GOLD', 'WITHDRAW_GOLD',
+        'INVESTMENT', 'AUTO_BUY_SALE_GOLD', 'GOLDEN_GIFT',
+    ];
 
     public static function unlimitedForTesting(): bool
     {

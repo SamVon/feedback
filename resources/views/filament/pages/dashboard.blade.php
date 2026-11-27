@@ -1,6 +1,19 @@
 <x-filament-panels::page>
     @php
         $summary = $this->summary();
+        $genderSummary = $this->respondentGenders();
+        $genderRows = [
+            ['key' => 'Female', 'label' => __('feedback.gender_values.Female'), 'color' => '#1c6398'],
+            ['key' => 'Male', 'label' => __('feedback.gender_values.Male'), 'color' => '#6ed2e4'],
+            ['key' => 'Unspecified', 'label' => __('feedback.gender_unspecified'), 'color' => '#cbd5e1'],
+        ];
+        $genderStops = [];
+        $genderOffset = 0;
+        foreach ($genderRows as $row) {
+            $genderEnd = $genderOffset + ($genderSummary['total'] ? 100 * $genderSummary['counts'][$row['key']] / $genderSummary['total'] : 0);
+            $genderStops[] = $row['color'].' '.$genderOffset.'% '.$genderEnd.'%';
+            $genderOffset = $genderEnd;
+        }
         $colors = [5 => '#14b8a6', 4 => '#3b82f6', 3 => '#ec4899', 2 => '#f59e0b', 1 => '#facc15'];
         $stops = [];
         $offset = 0;
@@ -12,40 +25,57 @@
         $choices = $this->choiceSummary();
         $recent = $this->recentFeedback();
     @endphp
-    <div class="eg-dashboard">
-        @include('filament.partials.feedback-tabs', ['active' => 'dashboard'])
-        <section class="eg-dashboard-overview">
-            {{ $this->filtersForm }}
-            <div class="eg-dashboard-summary">
-                <div class="eg-dashboard-stat-stack">
-                    <article class="eg-dashboard-card eg-dashboard-stat">
-                        <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.average') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-s-star" /></span></div>
-                        <p class="eg-dashboard-number">{{ $summary['average'] === null ? __('feedback.no_data') : number_format($summary['average'], 2).' / 5.0' }}</p>
-                        <p class="eg-dashboard-muted">{{ number_format($summary['rating_count']) }} {{ __('feedback.ratings') }}</p>
-                        @isset($summary['rating_question_label'])
-                            <p class="eg-dashboard-muted">{{ $summary['rating_question_survey'] }} · {{ $summary['rating_question_label'] }}</p>
-                        @endisset
-                    </article>
-                    <article class="eg-dashboard-card eg-dashboard-stat">
-                        <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.csat_score') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-o-chart-bar" /></span></div>
-                        <p class="eg-dashboard-number">{{ $summary['csat'] === null ? __('feedback.no_data') : number_format($summary['csat'], 1).'%' }}</p>
-                        <p class="eg-dashboard-muted">{{ __('feedback.csat_hint') }}</p>
+    <p data-dashboard-export-status role="status" aria-live="polite" class="eg-dashboard-export-status" hidden></p>
+    <div class="eg-dashboard" data-dashboard-capture>
+        <div class="eg-dashboard-top">
+            @include('filament.partials.feedback-tabs', ['active' => 'dashboard'])
+            <section class="eg-dashboard-overview">
+                {{ $this->filtersForm }}
+                <div class="eg-dashboard-summary">
+                    <div class="eg-dashboard-stat-stack">
+                        <article class="eg-dashboard-card eg-dashboard-stat">
+                            <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.average') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-s-star" /></span></div>
+                            <p class="eg-dashboard-number">{{ $summary['average'] === null ? __('feedback.no_data') : number_format($summary['average'], 2).' / 5.0' }}</p>
+                            <p class="eg-dashboard-muted">{{ number_format($summary['rating_count']) }} {{ __('feedback.ratings') }}</p>
+                            @isset($summary['rating_question_label'])
+                                <p class="eg-dashboard-muted">{{ $summary['rating_question_survey'] }} · {{ $summary['rating_question_label'] }}</p>
+                            @endisset
+                        </article>
+                        <article class="eg-dashboard-card eg-dashboard-stat">
+                            <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.csat_score') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-o-chart-bar" /></span></div>
+                            <p class="eg-dashboard-number">{{ $summary['csat'] === null ? __('feedback.no_data') : number_format($summary['csat'], 1).'%' }}</p>
+                            <p class="eg-dashboard-muted">{{ __('feedback.csat_hint') }}</p>
+                        </article>
+                    </div>
+                    <article class="eg-dashboard-card">
+                        <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.respondent_gender_title') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-o-users" /></span></div>
+                        <div class="eg-dashboard-responders eg-dashboard-genders">
+                            <div class="eg-dashboard-ring eg-dashboard-gender-ring" role="img"
+                                aria-label="{{ __('feedback.respondent_gender_chart', ['female' => $genderSummary['counts']['Female'], 'male' => $genderSummary['counts']['Male'], 'unspecified' => $genderSummary['counts']['Unspecified']]) }}"
+                                style="background: {{ $genderSummary['total'] ? 'conic-gradient('.implode(', ', $genderStops).')' : '#edf0f3' }}">
+                                <div><strong>{{ number_format($genderSummary['total']) }}</strong><span>{{ __('feedback.respondents') }}</span></div>
+                            </div>
+                            <div class="eg-dashboard-gender-table-wrap">
+                                <table class="eg-dashboard-table eg-dashboard-gender-table" aria-label="{{ __('feedback.respondent_gender_title') }}">
+                                    <thead><tr><th scope="col">{{ __('feedback.gender') }}</th><th scope="col">{{ __('feedback.respondents') }}</th><th scope="col">%</th></tr></thead>
+                                    <tbody>
+                                        @foreach ($genderRows as $row)
+                                            <tr>
+                                                <th scope="row"><span class="eg-dashboard-dot" style="background: {{ $row['color'] }}" aria-hidden="true"></span>{{ $row['label'] }}</th>
+                                                <td>{{ number_format($genderSummary['counts'][$row['key']]) }}</td>
+                                                <td>{{ $genderSummary['total'] ? number_format($genderSummary['percentages'][$row['key']], 1).'%' : '—' }}</td>
+                                            </tr>
+                                        @endforeach
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                        @if (! $genderSummary['total'])<p class="eg-dashboard-muted">{{ __('feedback.no_data') }}</p>@endif
+                        <p class="eg-dashboard-muted">{{ __('feedback.respondent_gender_hint') }}</p>
                     </article>
                 </div>
-                <article class="eg-dashboard-card">
-                    <div class="eg-dashboard-card-heading"><h2>{{ __('feedback.responses') }}</h2><span class="eg-dashboard-icon"><x-filament::icon icon="heroicon-o-users" /></span></div>
-                    <div class="eg-dashboard-responders">
-                        <div class="eg-dashboard-ring eg-dashboard-response-ring"><div><strong>{{ number_format($summary['response_count']) }}</strong><span>{{ __('feedback.responses') }}</span></div></div>
-                        <dl class="eg-dashboard-totals">
-                            <div><dt>{{ __('feedback.responses') }}</dt><dd>{{ number_format($summary['response_count']) }}</dd></div>
-                            <div><dt>{{ __('feedback.unique_customers') }}</dt><dd>{{ number_format($summary['unique_customers']) }}</dd></div>
-                            <div><dt>{{ __('feedback.ratings') }}</dt><dd>{{ number_format($summary['rating_count']) }}</dd></div>
-                        </dl>
-                    </div>
-                    <p class="eg-dashboard-muted">{{ __('feedback.dashboard_accounts_hint') }}</p>
-                </article>
-            </div>
-        </section>
+            </section>
+        </div>
         <div class="eg-dashboard-grid">
             <section class="eg-dashboard-card">
                 <h2>{{ __('feedback.distribution') }}</h2>

@@ -20,7 +20,7 @@ return [
         'email' => env('FEEDBACK_LOCAL_ADMIN_EMAIL'),
         'password' => env('FEEDBACK_LOCAL_ADMIN_PASSWORD'),
     ],
-    'locale' => env('FEEDBACK_UI_LOCALE', 'en'), // Local development choice; business default is unconfirmed.
+    'locale' => env('FEEDBACK_UI_LOCALE', 'lo'),
     'services' => [
         'app-backend' => ['token_hash' => env('FEEDBACK_APP_TOKEN_SHA256'), 'scopes' => ['config.read', 'response.write', 'response.read', 'invitation.write']],
         'user-adapter' => ['token_hash' => env('FEEDBACK_COHORT_TOKEN_SHA256'), 'scopes' => ['cohort.write']],

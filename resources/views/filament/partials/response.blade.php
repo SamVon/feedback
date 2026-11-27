@@ -11,6 +11,7 @@
                 @can('customer_identity.read')
                     <div><dt>{{ __('feedback.name') }}</dt><dd>{{ $response->customer_name ?: '—' }}</dd></div>
                     <div><dt>{{ __('feedback.customer') }}</dt><dd>{{ $response->customer_phone ?: '—' }}</dd></div>
+                    <div><dt>{{ __('feedback.gender') }}</dt><dd>{{ $response->gender ? __('feedback.gender_values.'.$response->gender) : '—' }}</dd></div>
                 @endcan
                 <div><dt>{{ __('feedback.survey') }}</dt><dd>{{ $response->version->survey->name }}</dd></div>
                 <div><dt>{{ __('feedback.source') }}</dt><dd>{{ __('feedback.history_source_'.$response->source) }}</dd></div>

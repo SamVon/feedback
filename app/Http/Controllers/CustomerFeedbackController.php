@@ -79,7 +79,7 @@ final class CustomerFeedbackController
     public function submit(Request $request, SubmitFeedback $feedback): JsonResponse
     {
         $request->validate(['name' => 'prohibited', 'phone' => 'prohibited']);
-        $data = $request->only(['client_submission_id', 'survey_version_id', 'source', 'invitation_id', 'submitted_at', 'answers', 'metadata']);
+        $data = $request->only(['client_submission_id', 'survey_version_id', 'source', 'invitation_id', 'submitted_at', 'gender', 'answers', 'metadata']);
         $data['actor_user_id'] = $request->attributes->get('customer_actor');
         [$result, $status] = $feedback->execute('customer-app', $this->key($request), $data, $request->attributes->get('customer_profile', []));
 

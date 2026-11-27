@@ -41,4 +41,5 @@ Thumbs.db
 
 # Generated deployable release bundle
 /dist/
+/app.tgz*
 .build-dist.sh

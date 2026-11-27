@@ -2,9 +2,11 @@
 
 namespace App\Filament\Pages;
 
+use App\Application\Access;
 use App\Application\Analytics;
 use App\Application\Exports;
 use App\Application\ReportFilters;
+use App\Filament\Resources\FeedbackResource;
 use App\Filament\Support\FilterFields;
 use App\Filament\Widgets\Trend;
 use App\Models\Question;
@@ -29,6 +31,11 @@ class Dashboard extends \Filament\Pages\Dashboard
     public function summary(): array
     {
         return app(Analytics::class)->summary(auth()->user(), $this->dataFilters());
+    }
+
+    public function respondentGenders(): array
+    {
+        return app(Analytics::class)->respondentGenders(auth()->user(), $this->dataFilters());
     }
 
     public function choiceSummary(): array
@@ -94,6 +101,16 @@ class Dashboard extends \Filament\Pages\Dashboard
         return __('feedback.dashboard');
     }
 
+    public static function getNavigationItemActiveRoutePattern(): string|array
+    {
+        return [
+            static::getRouteName(),
+            Customers::getRouteName(),
+            CustomerDetail::getRouteName(),
+            FeedbackResource::getRouteBaseName().'.*',
+        ];
+    }
+
     public function getSubheading(): ?string
     {
         return null;
@@ -126,10 +143,21 @@ class Dashboard extends \Filament\Pages\Dashboard
 
     protected function getHeaderActions(): array
     {
-        return [Action::make('exportPdf')->label('Export PDF')->outlined()->visible(fn () => auth()->user()->can('report.export') && auth()->user()->can('feedback.read'))->action(function (): void {
-            app(Exports::class)->create(auth()->user(), $this->dataFilters(), 'pdf');
-            Notification::make()->title(__('feedback.export_queued'))->success()->send();
-        }), Action::make('exports')->label(__('feedback.reports'))->url(Reports::getUrl())->visible(fn () => Reports::canAccess())];
+        return [Action::make('exportPng')->label(__('feedback.export_dashboard_png'))->icon('heroicon-o-photo')
+            ->visible(fn () => auth()->user()->can('report.export') && auth()->user()->can('feedback.read'))
+            ->extraAttributes(['data-dashboard-export-button' => '',
+                'data-export-working' => __('feedback.export_dashboard_working'),
+                'data-export-error' => __('feedback.export_dashboard_error'),
+                'data-export-success' => __('feedback.export_dashboard_success'),
+            ])->action(function (): void {
+                Access::check(auth()->user(), 'analytics.read');
+                Access::check(auth()->user(), 'report.export');
+                Access::check(auth()->user(), 'feedback.read');
+                $this->dispatch('dashboard-export-png');
+            }), Action::make('exportPdf')->label('Export PDF')->outlined()->visible(fn () => auth()->user()->can('report.export') && auth()->user()->can('feedback.read'))->action(function (): void {
+                app(Exports::class)->create(auth()->user(), $this->dataFilters(), 'pdf');
+                Notification::make()->title(__('feedback.export_queued'))->success()->send();
+            }), Action::make('exports')->label(__('feedback.reports'))->url(Reports::getUrl())->visible(fn () => Reports::canAccess())];
     }
 
     public function getWidgets(): array
